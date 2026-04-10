@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}대시보드 - WBS 관리 시스템{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="dashboard-header">
+        <h1>프로젝트 목록</h1>
+        {% if user_role == 'admin' %}
+        <button class="btn btn-primary" onclick="showCreateProjectModal()">+ 새 프로젝트</button>
+        {% endif %}
+    </div>
+
+    <div id="project-list" class="project-grid">
+        <div class="loading">프로젝트를 불러오는 중...</div>
+    </div>
+</div>
+
+<!-- 프로젝트 생성/수정 모달 -->
+<div id="project-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modal-title">새 프로젝트</h2>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <form id="project-form" onsubmit="handleProjectSubmit(event)">
+            <div class="form-group">
+                <label for="project-name">프로젝트명 *</label>
+                <input type="text" id="project-name" required placeholder="프로젝트명을 입력하세요">
+            </div>
+            <div class="form-group">
+                <label for="project-desc">설명</label>
+                <textarea id="project-desc" rows="3" placeholder="프로젝트 설명"></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="project-start">시작일</label>
+                    <input type="date" id="project-start">
+                </div>
+                <div class="form-group">
+                    <label for="project-end">종료일</label>
+                    <input type="date" id="project-end">
+                </div>
+            </div>
+
+            <!-- 멤버 할당 (admin만 표시) -->
+            {% if user_role == 'admin' %}
+            <div class="form-group" id="member-section">
+                <label>프로젝트 멤버</label>
+                <div id="member-list"></div>
+                <button type="button" class="btn" onclick="addMemberRow()" style="margin-top:6px;">+ 멤버 추가</button>
+            </div>
+            {% endif %}
+
+            <div class="form-actions">
+                <button type="button" class="btn" onclick="closeModal()">취소</button>
+                <button type="submit" class="btn btn-primary">저장</button>
+            </div>
+            <input type="hidden" id="project-id" value="">
+        </form>
+    </div>
+</div>
+
+<script>
+    const USER_ROLE = '{{ user_role }}';
+</script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

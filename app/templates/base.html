@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}WBS 관리 시스템{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav class="topbar">
+        <div class="topbar-left">
+            {% block topbar_title %}<a href="/" class="logo">WBS Manager</a>{% endblock %}
+        </div>
+        <div class="topbar-center">
+            {% block topbar_center %}{% endblock %}
+        </div>
+        <div class="topbar-right">
+            {% if user_name %}
+            <span class="nav-link" style="cursor:default;">{{ user_name }}{% if user_role == 'admin' %} (관리자){% endif %}</span>
+            <a href="/logout" class="nav-link">로그아웃</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <main class="content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <div id="toast-container"></div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

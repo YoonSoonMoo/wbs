@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WBS 관리</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/wbs.css') }}">
+</head>
+<body>
+<div class="app-layout">
+
+  <!-- TOP BAR -->
+  <div class="top-bar">
+    <h1>{{ project_name }} <span>Work Breakdown Structure</span></h1>
+    <div class="top-bar-actions">
+      <span class="btn btn-top" style="cursor:default;opacity:0.7;">{{ user_name }}{% if project_role == 'admin' %} (관리자){% elif project_role == 'viewer' %} (뷰어){% endif %}</span>
+      <a href="/" class="btn btn-top">📋 대시보드</a>
+      <a href="/logout" class="btn btn-top">로그아웃</a>
+      <button class="btn btn-top" onclick="exportCSV()">📥 CSV</button>
+      <button class="btn btn-top" onclick="exportExcel()">📥 Excel</button>
+      {% if project_role != 'viewer' %}
+      <button class="btn btn-top" onclick="showPasteModal()">📋 Excel 붙여넣기</button>
+      {% endif %}
+      <a href="/project/{{ project_id }}/gantt" class="btn btn-top">📊 Gantt</a>
+      {% if project_role != 'viewer' %}
+      <button class="btn btn-primary" onclick="addRow()">＋ 행 추가</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ALERT SECTION -->
+  <div class="alert-section" id="alertSection">
+    <div class="alert-icon"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" style="color:var(--accent-red)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+    <span class="alert-label">오늘의 알림</span>
+    <span class="alert-count" id="alertCount">0</span>
+    <div class="alert-items" id="alertItems"><span class="alert-empty">확인 중...</span></div>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <div class="toolbar-group">
+      <input type="text" class="search-box" placeholder="🔍 검색 (업무, 담당자...)" id="searchInput" oninput="filterGrid()">
+    </div>
+    <div class="toolbar-sep"></div>
+    <div class="toolbar-group">
+      <select class="filter-select" id="filterStatus" onchange="filterGrid()">
+        <option value="">전체 진행률</option>
+        <option value="done">완료 (100%)</option>
+        <option value="ing">진행중 (1~99%)</option>
+        <option value="not">미착수 (0%)</option>
+      </select>
+      <select class="filter-select" id="filterAssignee" onchange="filterGrid()">
+        <option value="">전체 담당자</option>
+      </select>
+    </div>
+    {% if project_role != 'viewer' %}
+    <div class="toolbar-sep"></div>
+    <div class="toolbar-group">
+      <button class="btn btn-danger" onclick="confirmClear()">🗑 초기화</button>
+    </div>
+    {% endif %}
+    <div class="stats-bar">
+      <span>전체 <span class="stat-val" id="statTotal">0</span></span>
+      <span>완료 <span class="stat-val" style="color:var(--accent-green)" id="statDone">0</span></span>
+      <span>진행 <span class="stat-val" style="color:var(--accent-blue)" id="statProgress">0</span></span>
+      <span>지연 <span class="stat-val" style="color:var(--accent-red)" id="statDelayed">0</span></span>
+    </div>
+  </div>
+
+  <!-- GRID -->
+  <div class="grid-wrapper">
+    <table id="wbsTable">
+      <thead><tr>
+        <th class="col-rownum">#</th>
+        <th class="col-category sortable" data-col="category">구분</th>
+        <th class="col-task sortable" data-col="task_name">Task</th>
+        <th class="col-subtask sortable" data-col="subtask">서브태스크</th>
+        <th class="col-detail">세부 항목</th>
+        <th class="col-assignee sortable" data-col="assignee">담당자</th>
+        <th class="col-plan-start sortable" data-col="plan_start">계획시작</th>
+        <th class="col-plan-end sortable" data-col="plan_end">계획완료</th>
+        <th class="col-act-start">실제시작</th>
+        <th class="col-act-end">실제종료</th>
+        <th class="col-effort sortable" data-col="effort">공수</th>
+        <th class="col-progress sortable" data-col="progress">진행률</th>
+        <th class="col-status">진행상태</th>
+      </tr></thead>
+      <tbody id="wbsBody"></tbody>
+    </table>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer-bar">
+    <div class="footer-left">
+      <span>총 행: <strong id="footerRows">0</strong></span>
+      <span>마지막 저장: <strong id="footerSaved">-</strong></span>
+    </div>
+    <div class="storage-indicator">
+      <span class="storage-dot"></span>
+      <span>DB 연결됨</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- CONTEXT MENU -->
+<div class="context-menu" id="contextMenu">
+  <div class="context-menu-item" onclick="insertRowAbove()">↑ 위에 행 삽입</div>
+  <div class="context-menu-item" onclick="insertRowBelow()">↓ 아래에 행 삽입</div>
+  <div class="context-menu-sep"></div>
+  <div class="context-menu-item" onclick="duplicateRow()">⧉ 행 복제</div>
+  <div class="context-menu-sep"></div>
+  <div class="context-menu-item danger" onclick="deleteRow()">✕ 행 삭제</div>
+</div>
+
+<!-- PASTE MODAL -->
+<div class="modal-overlay" id="pasteModal">
+  <div class="modal">
+    <h3>📋 Excel 데이터 붙여넣기</h3>
+    <p class="modal-desc">Excel에서 복사한 데이터를 아래에 붙여넣으세요. 탭으로 구분된 데이터를 자동 인식합니다.<br><strong>열 순서:</strong> 구분 → Task → 서브태스크 → 세부항목 → 담당자 → 계획시작 → 계획완료 → 실제시작 → 실제종료 → 공수 → 진행률 → 진행상태</p>
+    <textarea id="pasteArea" placeholder="여기에 Ctrl+V로 붙여넣기..."></textarea>
+    <div class="modal-actions">
+      <button class="btn" onclick="closePasteModal()">취소</button>
+      <button class="btn btn-primary" onclick="importPaste()">적용</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const PROJECT_ID = {{ project_id }};
+  const USER_ROLE = '{{ project_role }}';
+</script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/grid.js') }}"></script>
+</body>
+</html>

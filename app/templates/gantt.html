@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Gantt 차트{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.css">
+{% endblock %}
+
+{% block topbar_title %}<span class="logo">{{ project_name }}</span>{% endblock %}
+
+{% block topbar_center %}
+<div class="toolbar">
+    <a href="/project/{{ project_id }}/wbs" class="btn btn-sm">WBS 그리드</a>
+    <span class="separator">|</span>
+    <button class="btn btn-sm gantt-view-btn active" data-mode="Week" onclick="changeView('Week')">주간</button>
+    <button class="btn btn-sm gantt-view-btn" data-mode="Month" onclick="changeView('Month')">월간</button>
+    <button class="btn btn-sm gantt-view-btn" data-mode="Quarter Year" onclick="changeView('Quarter Year')">분기</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="gantt-container">
+    <div id="gantt-chart"></div>
+    <div id="gantt-empty" class="empty-state" style="display:none;">
+        <p>일정이 설정된 항목이 없습니다.</p>
+        <a href="/project/{{ project_id }}/wbs" class="btn btn-primary">WBS에서 일정 설정하기</a>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.js"></script>
+<script>
+    const PROJECT_ID = {{ project_id }};
+</script>
+<script src="{{ url_for('static', filename='js/gantt.js') }}"></script>
+{% endblock %}

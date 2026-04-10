@@ -1,0 +1,33 @@
+from flask import Blueprint, g, redirect, render_template, url_for
+
+from app.auth import login_required
+from app.models import project as project_model
+from app.services.auth_service import get_project_role
+
+main_bp = Blueprint('main', __name__)
+
+
+@main_bp.route('/')
+@login_required
+def index():
+    return render_template('index.html')
+
+
+@main_bp.route('/project/<int:project_id>/wbs')
+@login_required
+def wbs_view(project_id):
+    role = get_project_role(g.user['id'], project_id)
+    if not role:
+        return redirect(url_for('main.index'))
+    project = project_model.get_project(project_id)
+    return render_template('wbs.html', project_id=project_id, project_role=role, project_name=project['name'])
+
+
+@main_bp.route('/project/<int:project_id>/gantt')
+@login_required
+def gantt_view(project_id):
+    role = get_project_role(g.user['id'], project_id)
+    if not role:
+        return redirect(url_for('main.index'))
+    project = project_model.get_project(project_id)
+    return render_template('gantt.html', project_id=project_id, project_role=role, project_name=project['name'])
