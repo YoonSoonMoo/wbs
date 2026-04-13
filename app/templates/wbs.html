@@ -57,7 +57,8 @@
     {% if project_role != 'viewer' %}
     <div class="toolbar-sep"></div>
     <div class="toolbar-group">
-      <button class="btn btn-danger" onclick="confirmClear()">🗑 초기화</button>
+      <button class="btn btn-danger" id="deleteSelectedBtn" style="display:none" onclick="deleteSelectedRows()">✕ 선택 삭제</button>
+      <span id="selectionInfo" style="font-size:11px;color:var(--text-muted);"></span>
     </div>
     {% endif %}
     <div class="stats-bar">
@@ -111,7 +112,8 @@
   <div class="context-menu-sep"></div>
   <div class="context-menu-item" onclick="duplicateRow()">⧉ 행 복제</div>
   <div class="context-menu-sep"></div>
-  <div class="context-menu-item danger" onclick="deleteRow()">✕ 행 삭제</div>
+  <div class="context-menu-item danger" id="ctxDeleteSingle" onclick="deleteRow()">✕ 행 삭제</div>
+  <div class="context-menu-item danger" id="ctxDeleteSelected" style="display:none" onclick="deleteSelectedRows()">✕ 선택 행 삭제</div>
 </div>
 
 <!-- PASTE MODAL -->

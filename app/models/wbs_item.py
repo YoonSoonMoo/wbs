@@ -40,6 +40,11 @@ def get_item(item_id):
     return dict(row) if row else None
 
 
+def _trim(value):
+    """문자열이면 앞뒤 공백을 제거한다."""
+    return value.strip() if isinstance(value, str) else value
+
+
 def create_item(data):
     db = get_db()
     cursor = db.execute(
@@ -52,23 +57,23 @@ def create_item(data):
         (
             data['project_id'],
             data.get('parent_id'),
-            data.get('wbs_code', ''),
+            _trim(data.get('wbs_code', '')),
             data.get('level', 0),
             data.get('sort_order', 0),
-            data.get('category', ''),
-            data.get('task_name', ''),
-            data.get('subtask', ''),
-            data.get('detail', ''),
-            data.get('description', ''),
-            data.get('plan_start'),
-            data.get('plan_end'),
-            data.get('actual_start'),
-            data.get('actual_end'),
-            data.get('assignee', ''),
+            _trim(data.get('category', '')),
+            _trim(data.get('task_name', '')),
+            _trim(data.get('subtask', '')),
+            _trim(data.get('detail', '')),
+            _trim(data.get('description', '')),
+            _trim(data.get('plan_start')),
+            _trim(data.get('plan_end')),
+            _trim(data.get('actual_start')),
+            _trim(data.get('actual_end')),
+            _trim(data.get('assignee', '')),
             data.get('effort', 0),
             data.get('progress', 0),
-            data.get('status', '대기'),
-            data.get('priority', 'medium'),
+            _trim(data.get('status', '대기')),
+            _trim(data.get('priority', 'medium')),
             data.get('is_milestone', 0),
         ),
     )
@@ -83,7 +88,7 @@ def update_item(item_id, data):
     for key in EDITABLE_FIELDS:
         if key in data:
             fields.append(f"{key} = ?")
-            values.append(data[key])
+            values.append(_trim(data[key]))
     if not fields:
         return False
     values.append(item_id)

@@ -4,6 +4,8 @@ var data = [];
 var contextRowIdx = -1;
 var sortCol = null;
 var sortDir = 'asc';
+var selectedRows = {};  // data index -> true
+var lastClickedRowIdx = -1;
 
 // ===== Data Loading =====
 async function loadItems() {
@@ -72,32 +74,49 @@ function renderGrid() {
     var canEdit = (typeof USER_ROLE !== 'undefined' && USER_ROLE !== 'viewer');
     var ceAttr = canEdit ? ' contenteditable="true"' : '';
     var editClass = canEdit ? 'editable' : '';
+    var canDrag = canEdit && !sortCol && !sv && !fs && !fa;
+    var todayDate = new Date(); todayDate.setHours(0,0,0,0);
 
     var h = '';
     for (var i = 0; i < filtered.length; i++) {
         var row = filtered[i];
         var p = parseFloat(row.progress) || 0;
         var pColor = p >= 100 ? 'var(--accent-green)' : p >= 50 ? 'var(--accent-blue)' : p > 0 ? 'var(--accent-yellow)' : '#d1d5db';
-        h += '<tr data-idx="' + row._idx + '"' + (canEdit ? ' oncontextmenu="showContext(event,' + row._idx + ')"' : '') + '>';
-        h += '<td class="row-num">' + (i + 1) + '</td>';
+        var trClass = [];
+        if (selectedRows[row._idx]) trClass.push('selected');
+        if (p >= 100) trClass.push('completed');
+        // Delayed: plan_end passed & not 100%
+        var delayStyle = '';
+        if (p < 100 && row.plan_end) {
+            var pe = new Date(row.plan_end + 'T00:00:00');
+            if (!isNaN(pe) && pe < todayDate) {
+                trClass.push('delayed');
+                var intensity = Math.round((100 - p) / 10) / 10; // 0%→1.0, 90%→0.1
+                delayStyle = ' style="--delay:' + intensity + '"';
+            }
+        }
+        var trClassAttr = trClass.length ? ' class="' + trClass.join(' ') + '"' : '';
+        h += '<tr data-idx="' + row._idx + '"' + trClassAttr + delayStyle + (canEdit ? ' oncontextmenu="showContext(event,' + row._idx + ')"' : '') + '>';
+        h += '<td class="row-num"' + (canDrag ? ' draggable="true"' : '') + ' onclick="handleRowSelect(event,' + row._idx + ')">' + (i + 1) + '</td>';
         h += '<td class="' + editClass + '"' + ceAttr + ' data-col="category">' + esc(row.category) + '</td>';
         h += '<td class="' + editClass + '"' + ceAttr + ' data-col="task_name">' + esc(row.task_name) + '</td>';
         h += '<td class="' + editClass + '"' + ceAttr + ' data-col="subtask">' + esc(row.subtask) + '</td>';
-        h += '<td class="' + editClass + '"' + ceAttr + ' data-col="detail">' + esc(row.detail) + '</td>';
+        h += '<td class="expandable" data-col="detail">' + esc(row.detail) + '</td>';
         h += '<td class="' + editClass + ' cell-center"' + ceAttr + ' data-col="assignee">' + esc(row.assignee) + '</td>';
         h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="plan_start">' + esc(row.plan_start) + '</td>';
         h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="plan_end">' + esc(row.plan_end) + '</td>';
         h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="actual_start">' + esc(row.actual_start) + '</td>';
         h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="actual_end">' + esc(row.actual_end) + '</td>';
         h += '<td class="' + editClass + ' cell-num"' + ceAttr + ' data-col="effort">' + esc(row.effort) + '</td>';
-        h += '<td class="cell-progress"><div class="progress-bar-cell"><div class="progress-bar-bg"><div class="progress-bar-fill" style="width:' + p + '%;background:' + pColor + '"></div></div><span class="progress-val">' + p + '%</span></div></td>';
-        h += '<td class="' + editClass + ' cell-status"' + ceAttr + ' data-col="status">' + esc(row.status) + '</td>';
+        h += '<td class="cell-progress" data-col="progress" data-idx="' + row._idx + '"' + (canEdit ? ' onclick="editProgress(this,' + row._idx + ')"' : '') + '><div class="progress-bar-cell"><div class="progress-bar-bg"><div class="progress-bar-fill" style="width:' + p + '%;background:' + pColor + '"></div></div><span class="progress-val">' + p + '%</span></div></td>';
+        h += '<td class="expandable cell-status" data-col="status">' + esc(row.status) + '</td>';
         h += '</tr>';
     }
     tbody.innerHTML = h;
     updateStats(filtered);
     updateAlerts();
     updateAssigneeFilter();
+    updateSelectionUI();
     document.getElementById('footerRows').textContent = data.length;
 }
 
@@ -171,7 +190,138 @@ function updateAssigneeFilter() {
     }
 }
 
+// ===== Row Selection =====
+function handleRowSelect(e, idx) {
+    e.stopPropagation();
+    if (e.shiftKey && lastClickedRowIdx >= 0) {
+        // Shift+click: range select
+        var from = Math.min(lastClickedRowIdx, idx);
+        var to = Math.max(lastClickedRowIdx, idx);
+        for (var i = from; i <= to; i++) selectedRows[i] = true;
+    } else if (e.ctrlKey || e.metaKey) {
+        // Ctrl+click: toggle single
+        if (selectedRows[idx]) delete selectedRows[idx];
+        else selectedRows[idx] = true;
+    } else {
+        // Plain click: toggle single
+        if (selectedRows[idx]) delete selectedRows[idx];
+        else selectedRows[idx] = true;
+    }
+    lastClickedRowIdx = idx;
+    applySelectionStyles();
+    updateSelectionUI();
+}
+
+function applySelectionStyles() {
+    var rows = document.querySelectorAll('#wbsBody tr');
+    for (var i = 0; i < rows.length; i++) {
+        var idx = parseInt(rows[i].dataset.idx);
+        if (selectedRows[idx]) rows[i].classList.add('selected');
+        else rows[i].classList.remove('selected');
+    }
+}
+
+function selectAllRows() {
+    var count = Object.keys(selectedRows).length;
+    if (count > 0 && count === data.length) {
+        // All selected -> deselect all
+        selectedRows = {};
+    } else {
+        for (var i = 0; i < data.length; i++) selectedRows[i] = true;
+    }
+    applySelectionStyles();
+    updateSelectionUI();
+}
+
+function clearSelection() {
+    selectedRows = {};
+    applySelectionStyles();
+    updateSelectionUI();
+}
+
+function getSelectedCount() {
+    return Object.keys(selectedRows).length;
+}
+
+function updateSelectionUI() {
+    var count = getSelectedCount();
+    var btn = document.getElementById('deleteSelectedBtn');
+    if (btn) {
+        if (count > 0) {
+            btn.style.display = 'flex';
+            btn.textContent = '✕ 선택 삭제 (' + count + ')';
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+    var info = document.getElementById('selectionInfo');
+    if (info) {
+        info.textContent = count > 0 ? count + '개 선택' : '';
+    }
+}
+
+function deleteSelectedRows() {
+    var indices = Object.keys(selectedRows).map(Number).sort(function(a, b) { return b - a; });
+    if (indices.length === 0) return;
+    if (!confirm(indices.length + '개 행을 삭제하시겠습니까?')) return;
+
+    for (var i = 0; i < indices.length; i++) {
+        var item = data[indices[i]];
+        if (item && item._id) {
+            API.delete('/api/wbs/items/' + item._id).catch(function() {});
+        }
+        data.splice(indices[i], 1);
+    }
+    selectedRows = {};
+    lastClickedRowIdx = -1;
+    renderGrid();
+    showToast(indices.length + '개 행이 삭제되었습니다.', 'success');
+}
+
 function filterGrid() { renderGrid(); }
+
+// ===== Date Parsing =====
+var DATE_COLS = ['plan_start', 'plan_end', 'actual_start', 'actual_end'];
+
+function parseDate(s) {
+    if (!s) return '';
+    s = s.trim();
+    if (!s) return '';
+    // Already yyyy-MM-dd
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+    var y, m, d, now = new Date();
+
+    // yyyy/M/d or yyyy/MM/dd
+    var r = s.match(/^(\d{4})[\/](\d{1,2})[\/](\d{1,2})$/);
+    if (r) { y = parseInt(r[1]); m = parseInt(r[2]); d = parseInt(r[3]); return fmtDate(y, m, d); }
+
+    // yy.M.d or yy.MM.dd (2-digit year)
+    r = s.match(/^(\d{2})\.(\d{1,2})\.(\d{1,2})$/);
+    if (r) { y = 2000 + parseInt(r[1]); m = parseInt(r[2]); d = parseInt(r[3]); return fmtDate(y, m, d); }
+
+    // MM.dd (no year)
+    r = s.match(/^(\d{1,2})\.(\d{1,2})$/);
+    if (r) { y = now.getFullYear(); m = parseInt(r[1]); d = parseInt(r[2]); return fmtDate(y, m, d); }
+
+    // yyyy-M-d (not zero-padded)
+    r = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (r) { y = parseInt(r[1]); m = parseInt(r[2]); d = parseInt(r[3]); return fmtDate(y, m, d); }
+
+    // yy년M월d일 or yyyy년M월d일
+    r = s.match(/^(\d{2,4})년\s*(\d{1,2})월\s*(\d{1,2})일$/);
+    if (r) { y = parseInt(r[1]); if (y < 100) y += 2000; m = parseInt(r[2]); d = parseInt(r[3]); return fmtDate(y, m, d); }
+
+    // M월d일 (no year)
+    r = s.match(/^(\d{1,2})월\s*(\d{1,2})일$/);
+    if (r) { y = now.getFullYear(); m = parseInt(r[1]); d = parseInt(r[2]); return fmtDate(y, m, d); }
+
+    return s; // unrecognized -> return as-is
+}
+
+function fmtDate(y, m, d) {
+    return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+}
 
 // ===== Cell Editing =====
 var saveTimer = null;
@@ -182,6 +332,9 @@ document.addEventListener('focusout', function(e) {
     var idx = parseInt(tr.dataset.idx), col = e.target.dataset.col;
     if (data[idx]) {
         var newVal = e.target.textContent.trim();
+        // Date columns: normalize format
+        if (DATE_COLS.indexOf(col) >= 0) newVal = parseDate(newVal);
+        e.target.textContent = newVal;
         if (data[idx][col] !== newVal) {
             data[idx][col] = newVal;
             // Save to API
@@ -192,13 +345,18 @@ document.addEventListener('focusout', function(e) {
 });
 
 document.addEventListener('keydown', function(e) {
-    if (!e.target.classList.contains('editable')) return;
-    if (e.key === 'Tab') {
-        e.preventDefault();
-        var n = e.shiftKey ? e.target.previousElementSibling : e.target.nextElementSibling;
-        if (n && n.classList.contains('editable')) { n.focus(); window.getSelection().selectAllChildren(n); }
+    if (e.target.classList.contains('editable')) {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            var n = e.shiftKey ? e.target.previousElementSibling : e.target.nextElementSibling;
+            if (n && n.classList.contains('editable')) { n.focus(); window.getSelection().selectAllChildren(n); }
+        }
+        if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+        return;
     }
-    if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+    // Selection shortcuts (when not editing a cell)
+    if (e.key === 'Escape') clearSelection();
+    if (e.key === 'Delete' && getSelectedCount() > 0) deleteSelectedRows();
 });
 
 // ===== Paste in cell =====
@@ -229,7 +387,11 @@ function pasteIntoGrid(text, cell) {
         }
         for (var j = 0; j < cells.length; j++) {
             var ci = sci + j;
-            if (ci < co.length) data[di][co[ci]] = cells[j].trim();
+            if (ci < co.length) {
+                var val = cells[j].trim();
+                if (DATE_COLS.indexOf(co[ci]) >= 0) val = parseDate(val);
+                data[di][co[ci]] = val;
+            }
         }
     }
     saveBatch();
@@ -246,7 +408,102 @@ document.addEventListener('DOMContentLoaded', function() {
             renderGrid();
         });
     });
+    // # header click -> select all / deselect all
+    var rownumTh = document.querySelector('th.col-rownum');
+    if (rownumTh) rownumTh.addEventListener('click', selectAllRows);
 });
+
+// ===== Drag & Drop Row Reorder =====
+var dragSrcIdx = -1;
+
+document.addEventListener('dragstart', function(e) {
+    if (!e.target.classList.contains('row-num')) return;
+    var tr = e.target.closest('tr[data-idx]');
+    if (!tr || !tr.closest('#wbsBody')) return;
+    dragSrcIdx = parseInt(tr.dataset.idx);
+    tr.classList.add('dragging');
+    document.body.classList.add('is-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(dragSrcIdx));
+});
+
+document.addEventListener('dragover', function(e) {
+    if (dragSrcIdx < 0) return;
+    var tr = e.target.closest('tr[data-idx]');
+    if (!tr || !tr.closest('#wbsBody')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    // Clear previous indicators
+    document.querySelectorAll('.drag-over-top,.drag-over-bottom').forEach(function(el) {
+        el.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+    // Show drop position indicator
+    var rect = tr.getBoundingClientRect();
+    var mid = rect.top + rect.height / 2;
+    if (e.clientY < mid) tr.classList.add('drag-over-top');
+    else tr.classList.add('drag-over-bottom');
+});
+
+document.addEventListener('dragleave', function(e) {
+    var tr = e.target.closest('tr[data-idx]');
+    if (tr) tr.classList.remove('drag-over-top', 'drag-over-bottom');
+});
+
+document.addEventListener('drop', function(e) {
+    if (dragSrcIdx < 0) return;
+    e.preventDefault();
+    var tr = e.target.closest('tr[data-idx]');
+    if (!tr || !tr.closest('#wbsBody')) { cleanupDrag(); return; }
+
+    var targetIdx = parseInt(tr.dataset.idx);
+    if (targetIdx === dragSrcIdx) { cleanupDrag(); return; }
+
+    // Determine insert position: above or below target
+    var rect = tr.getBoundingClientRect();
+    var insertBefore = e.clientY < rect.top + rect.height / 2;
+
+    // Move in data array
+    var item = data.splice(dragSrcIdx, 1)[0];
+    var newIdx = targetIdx;
+    if (dragSrcIdx < targetIdx) newIdx--;
+    if (!insertBefore) newIdx++;
+    data.splice(newIdx, 0, item);
+
+    // Save new order to API
+    saveSortOrder();
+    selectedRows = {};
+    cleanupDrag();
+    renderGrid();
+});
+
+document.addEventListener('dragend', function() {
+    cleanupDrag();
+});
+
+function cleanupDrag() {
+    dragSrcIdx = -1;
+    document.body.classList.remove('is-dragging');
+    document.querySelectorAll('.dragging').forEach(function(el) { el.classList.remove('dragging'); });
+    document.querySelectorAll('.drag-over-top,.drag-over-bottom').forEach(function(el) {
+        el.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+}
+
+function saveSortOrder() {
+    var items = [];
+    for (var i = 0; i < data.length; i++) {
+        if (data[i]._id) {
+            items.push({ id: data[i]._id, sort_order: i });
+        }
+    }
+    if (items.length > 0) {
+        API.post('/api/wbs/' + PROJECT_ID + '/items/batch', { items: items }).then(function() {
+            document.getElementById('footerSaved').textContent = new Date().toLocaleTimeString('ko-KR');
+        }).catch(function() {
+            showToast('순서 저장 실패', 'error');
+        });
+    }
+}
 
 // ===== Row Operations =====
 function addRow() {
@@ -275,6 +532,20 @@ function showContext(e, idx) {
     var m = document.getElementById('contextMenu');
     m.style.left = e.clientX + 'px';
     m.style.top = e.clientY + 'px';
+    // Show/hide multi-delete option
+    var multiItem = document.getElementById('ctxDeleteSelected');
+    var singleItem = document.getElementById('ctxDeleteSingle');
+    var count = getSelectedCount();
+    if (multiItem && singleItem) {
+        if (count > 1) {
+            multiItem.style.display = '';
+            multiItem.textContent = '✕ 선택 행 삭제 (' + count + ')';
+            singleItem.style.display = 'none';
+        } else {
+            multiItem.style.display = 'none';
+            singleItem.style.display = '';
+        }
+    }
     m.classList.add('show');
 }
 document.addEventListener('click', function() { document.getElementById('contextMenu').classList.remove('show'); });
@@ -413,7 +684,9 @@ function importPaste() {
         var cells = rows[i].split('\t');
         var obj = newRow();
         for (var j = 0; j < cells.length && j < COLUMNS.length; j++) {
-            obj[COLUMNS[j]] = cells[j].trim();
+            var val = cells[j].trim();
+            if (DATE_COLS.indexOf(COLUMNS[j]) >= 0) val = parseDate(val);
+            obj[COLUMNS[j]] = val;
         }
         data.push(obj);
         created.push(obj);
@@ -431,6 +704,149 @@ function importPaste() {
     closePasteModal();
     renderGrid();
     showToast(created.length + '개 행을 추가했습니다.', 'success');
+}
+
+// ===== Progress Inline Edit =====
+function editProgress(td, idx) {
+    if (td.querySelector('input')) return;
+    var cur = parseInt(data[idx].progress) || 0;
+    td.innerHTML = '<input type="number" min="0" max="100" value="' + cur + '" class="progress-input">';
+    var input = td.querySelector('input');
+    input.focus();
+    input.select();
+
+    function commit() {
+        var val = Math.max(0, Math.min(100, parseInt(input.value) || 0));
+        if (String(val) !== String(cur)) {
+            data[idx].progress = String(val);
+            saveField(data[idx]._id, 'progress', val);
+        }
+        renderGrid();
+    }
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { e.preventDefault(); renderGrid(); }
+    });
+}
+
+// ===== Expanded Editor (detail, status) =====
+document.addEventListener('dblclick', function(e) {
+    var td = e.target.closest('td.expandable');
+    if (!td) return;
+    e.preventDefault();
+    window.getSelection().removeAllRanges();
+    showExpandedEditor(td);
+});
+
+function showExpandedEditor(td) {
+    var tr = td.closest('tr');
+    if (!tr) return;
+    var idx = parseInt(tr.dataset.idx);
+    var col = td.dataset.col;
+    if (!data[idx]) return;
+
+    closeExpandedEditor();
+
+    var canEdit = (typeof USER_ROLE !== 'undefined' && USER_ROLE !== 'viewer');
+    var rect = td.getBoundingClientRect();
+    var editorWidth = Math.max(rect.width, 320);
+
+    // Overlay
+    var overlay = document.createElement('div');
+    overlay.id = 'expandedOverlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:999;';
+
+    // Editor container
+    var editor = document.createElement('div');
+    editor.id = 'expandedEditor';
+    var left = rect.left;
+    if (left + editorWidth > window.innerWidth - 16) left = window.innerWidth - editorWidth - 16;
+    if (left < 8) left = 8;
+    var top = rect.bottom + 4;
+    if (top + 220 > window.innerHeight) top = rect.top - 220;
+    if (top < 8) top = 8;
+    editor.style.cssText = 'position:fixed;z-index:1000;background:#fff;border:2px solid var(--accent-blue);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.18);padding:10px;width:' + editorWidth + 'px;';
+    editor.style.left = left + 'px';
+    editor.style.top = top + 'px';
+
+    // Label
+    var label = document.createElement('div');
+    label.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-secondary);margin-bottom:6px;';
+    label.textContent = col === 'detail' ? '세부 항목' : '진행상태';
+    editor.appendChild(label);
+
+    // Textarea
+    var textarea = document.createElement('textarea');
+    textarea.style.cssText = 'width:100%;min-height:120px;max-height:300px;border:1px solid var(--border-color);border-radius:5px;font-family:var(--font-sans);font-size:12px;padding:8px;resize:vertical;line-height:1.7;outline:none;';
+    textarea.value = data[idx][col] || '';
+    if (!canEdit) textarea.readOnly = true;
+    editor.appendChild(textarea);
+
+    // Buttons
+    var btnWrap = document.createElement('div');
+    btnWrap.style.cssText = 'display:flex;justify-content:flex-end;gap:6px;margin-top:8px;';
+
+    if (canEdit) {
+        var cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn';
+        cancelBtn.textContent = '취소';
+        cancelBtn.style.cssText = 'font-size:11px;height:26px;padding:2px 12px;';
+        btnWrap.appendChild(cancelBtn);
+
+        var saveBtn = document.createElement('button');
+        saveBtn.className = 'btn btn-primary';
+        saveBtn.textContent = '확인';
+        saveBtn.style.cssText = 'font-size:11px;height:26px;padding:2px 12px;';
+        btnWrap.appendChild(saveBtn);
+    } else {
+        var closeBtn = document.createElement('button');
+        closeBtn.className = 'btn';
+        closeBtn.textContent = '닫기';
+        closeBtn.style.cssText = 'font-size:11px;height:26px;padding:2px 12px;';
+        btnWrap.appendChild(closeBtn);
+    }
+    editor.appendChild(btnWrap);
+
+    document.body.appendChild(overlay);
+    document.body.appendChild(editor);
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+    function close() {
+        if (overlay.parentNode) overlay.remove();
+        if (editor.parentNode) editor.remove();
+    }
+
+    function save() {
+        var newVal = textarea.value.trim();
+        if (data[idx][col] !== newVal) {
+            data[idx][col] = newVal;
+            saveField(data[idx]._id, col, newVal);
+            renderGrid();
+        }
+        close();
+    }
+
+    overlay.addEventListener('click', function() { canEdit ? save() : close(); });
+    textarea.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    });
+
+    if (canEdit) {
+        cancelBtn.addEventListener('click', function(e) { e.stopPropagation(); close(); });
+        saveBtn.addEventListener('click', function(e) { e.stopPropagation(); save(); });
+    } else {
+        closeBtn.addEventListener('click', function(e) { e.stopPropagation(); close(); });
+    }
+}
+
+function closeExpandedEditor() {
+    var o = document.getElementById('expandedOverlay');
+    var e = document.getElementById('expandedEditor');
+    if (o) o.remove();
+    if (e) e.remove();
 }
 
 // ===== Export =====

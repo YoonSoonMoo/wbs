@@ -114,6 +114,19 @@ def batch_update(project_id):
     return jsonify(results)
 
 
+# --- 데이터 초기화 ---
+
+@api_wbs_bp.route('/<int:project_id>/items', methods=['DELETE'])
+@api_login_required
+@project_access_required('participant')
+def clear_items(project_id):
+    from app.extensions import get_db
+    db = get_db()
+    db.execute("DELETE FROM wbs_item WHERE project_id = ?", (project_id,))
+    db.commit()
+    return jsonify({'message': '모든 WBS 항목이 초기화되었습니다.'})
+
+
 # --- 통계 ---
 
 @api_wbs_bp.route('/<int:project_id>/stats', methods=['GET'])

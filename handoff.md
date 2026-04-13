@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | https://github.com/YoonSoonMoo/wbs.git |
-| 작업일 | 2026-04-10 |
+| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선) |
 
 ## 2. 기술 스택
 
@@ -35,7 +35,7 @@ wbs/
 │   ├── extensions.py            # DB 헬퍼 (get_db, close_db, init_db)
 │   ├── models/
 │   │   ├── project.py           # 프로젝트 CRUD 쿼리
-│   │   └── wbs_item.py          # WBS 항목 CRUD 쿼리 (재귀 CTE 트리 조회)
+│   │   └── wbs_item.py          # WBS 항목 CRUD 쿼리 (재귀 CTE 트리 조회, _trim 헬퍼)
 │   ├── services/
 │   │   ├── wbs_service.py       # WBS 핵심 비즈니스 로직 (트리 구축, 이동, 일괄수정)
 │   │   ├── wbs_code_service.py  # WBS 코드 자동생성/재계산 로직
@@ -55,9 +55,9 @@ wbs/
 │   │   │   └── wbs.css          # WBS 그리드 전용 스타일 (template 기반)
 │   │   └── js/
 │   │       ├── app.js           # API 헬퍼, 토스트 알림, 유틸리티
-│   │       ├── grid.js          # WBS 그리드 UI (template 호환 - contenteditable, 컨텍스트메뉴)
+│   │       ├── grid.js          # WBS 그리드 UI (인라인편집, 확장편집, 복수선택, 날짜파싱, 컨텍스트메뉴)
 │   │       ├── gantt.js         # Gantt 차트 (Frappe Gantt 래퍼)
-│   │       └── dashboard.js     # 대시보드 (프로젝트 목록, 통계카드)
+│   │       └── dashboard.js     # 대시보드 (프로젝트 목록, 통계카드, 데이터 초기화)
 │   └── templates/
 │       ├── base.html            # 기본 레이아웃 (대시보드용, 사용자명/로그아웃 표시)
 │       ├── login.html           # 로그인 페이지
@@ -175,6 +175,7 @@ wbs/
 | DELETE | `/api/wbs/items/<id>` | 항목 삭제 (자식 포함 재귀 삭제) |
 | POST | `/api/wbs/items/<id>/move` | 항목 이동 (parent_id, sort_order) |
 | POST | `/api/wbs/<pid>/items/batch` | 일괄 수정 |
+| DELETE | `/api/wbs/<pid>/items` | 프로젝트 WBS 전체 초기화 (participant 이상) |
 | GET | `/api/wbs/<pid>/stats` | 통계 (전체/완료/진행/지연 건수, 평균 진행률) |
 | GET | `/api/wbs/<pid>/delayed` | 지연 업무 목록 |
 | GET | `/api/wbs/<pid>/dashboard` | 대시보드 종합 데이터 |
@@ -219,8 +220,11 @@ wbs/
 - WBS 그리드 UI는 `template/wbs-manage.html`의 디자인/동작을 그대로 재현
 - `wbs.html`은 `base.html`을 상속하지 않는 독립 페이지 (전용 `wbs.css` 사용)
 - 대시보드(`index.html`)는 `base.html` 상속 (별도 디자인)
-- 모든 셀은 `contenteditable` 기반 인라인 편집 (input/select 미사용)
+- 일반 셀은 `contenteditable` 기반 인라인 편집, 세부항목/진행상태는 더블클릭 팝업 편집 (개행 지원)
 - 인라인 편집 시 300ms debounce 적용 → PATCH API 자동 저장
+- 입력값 앞뒤 공백 자동 trim (프론트 focusout + 백엔드 모델 양쪽)
+- 날짜 컬럼 자동 변환: 다양한 형식 → yyyy-MM-dd (focusout, 붙여넣기 시 적용)
+- 행번호 클릭으로 복수 행 선택 (Shift 범위, Ctrl 토글, # 전체선택) → 일괄 삭제
 - SPA 프레임워크 미사용 → 빌드 도구 불필요, 즉시 개발 가능
 
 ### WBS 그리드 UI 상세 (template 호환)
@@ -229,8 +233,11 @@ wbs/
 - **알림 섹션**: 계획완료일 경과 + 진행률 100% 미만인 항목을 칩으로 표시 (지연일수 포함)
 - **필터**: 검색(전체 컬럼), 진행률(완료/진행중/미착수), 담당자(동적 드롭다운)
 - **정렬**: 컬럼 헤더 클릭 시 오름차순/내림차순 토글
-- **컨텍스트 메뉴**: 우클릭으로 행 삽입(위/아래), 행 복제, 행 삭제
+- **컨텍스트 메뉴**: 우클릭으로 행 삽입(위/아래), 행 복제, 행 삭제 / 복수 선택 시 선택 행 삭제
+- **행 복수 선택**: 행번호(#) 클릭 토글, Shift+클릭 범위, Ctrl+클릭 개별, 헤더 # 전체선택/해제 → 툴바 "선택 삭제" 버튼 / Delete 키
 - **Excel 붙여넣기**: 셀에서 직접 붙여넣기(멀티셀 자동 감지) + 전용 모달
+- **날짜 자동 변환**: `2026/4/12`, `26.4.12`, `04.12`, `4월12일` 등 → `yyyy-MM-dd` (focusout, 붙여넣기 시)
+- **세부항목/진행상태**: 더블클릭 팝업 편집 (textarea), 개행 지원, 그리드에 `pre-wrap`으로 줄바꿈 표시
 - **진행률 바**: 비율에 따라 색상 변경 (회색→노랑→파랑→초록)
 - **풋터**: 총 행 수, 마지막 저장 시각, DB 연결 상태
 
@@ -272,12 +279,17 @@ python run.py
 - [x] 대시보드 UI (프로젝트 카드, 진행률 바, 생성/수정/삭제)
 - [x] WBS 그리드 UI — template/wbs-manage.html 기반 재구성 완료:
   - [x] 레이아웃: top-bar → alert-section → toolbar → grid → footer-bar
-  - [x] contenteditable 기반 인라인 편집 (모든 셀)
+  - [x] contenteditable 기반 인라인 편집 (일반 셀)
+  - [x] 세부항목/진행상태 더블클릭 팝업 편집 (textarea, 개행 지원, viewer는 readonly)
+  - [x] 개행 내용 그리드 표시 (white-space: pre-wrap, 행 높이 자동 확장)
   - [x] 지연 업무 알림 섹션 (칩 + 지연일수)
   - [x] 검색/필터 (진행률, 담당자 드롭다운)
   - [x] 컬럼 헤더 클릭 정렬
-  - [x] 우클릭 컨텍스트 메뉴 (행 삽입/복제/삭제)
+  - [x] 우클릭 컨텍스트 메뉴 (행 삽입/복제/삭제/선택행 삭제)
+  - [x] 행번호 복수 선택 (클릭 토글, Shift 범위, Ctrl 개별, # 전체) + 일괄 삭제
   - [x] Excel 붙여넣기 (셀 직접 + 전용 모달)
+  - [x] 날짜 자동 변환 — 다양한 형식 → yyyy-MM-dd (2026/4/12, 26.4.12, 04.12, 26년4월12일, 4월12일)
+  - [x] 셀 입력값 앞뒤 trim (프론트 focusout + 백엔드 모델 _trim 헬퍼)
   - [x] 진행률 색상 바 (회색→노랑→파랑→초록)
   - [x] 전용 CSS (wbs.css, Noto Sans KR + JetBrains Mono)
 - [x] Gantt 차트 뷰 (Frappe Gantt, 주간/월간/분기 보기)
@@ -294,7 +306,8 @@ python run.py
   - [x] participant: 프로젝트 내 WBS 항목 추가/수정/삭제
   - [x] viewer: 읽기 전용 (편집 버튼 숨김, contenteditable 비활성화, API 403)
   - [x] 프로젝트 생성/수정 시 멤버 할당 UI (참여자/뷰어 역할 선택)
-  - [x] 대시보드: admin만 프로젝트 생성/수정/삭제 버튼 표시
+  - [x] 대시보드: admin만 프로젝트 생성/수정/데이터 초기화/삭제 버튼 표시
+  - [x] 데이터 초기화 버튼: 프로젝트 목록에서 프로젝트별 WBS 전체 삭제 (DELETE /api/wbs/<pid>/items)
   - [x] 초기 관리자 자동 생성 (yoonsm@daou.co.kr / zaq12wsx)
   - [x] 권한 동작 검증 완료 (admin 로그인, viewer 403 제한)
 - [x] 네비게이션 UI 개선:

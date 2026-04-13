@@ -48,6 +48,7 @@ async function renderProjects(projects) {
         if (isAdmin) {
             html += '<div class="project-actions" onclick="event.stopPropagation()">';
             html += '<button class="btn" onclick="editProject(' + project.id + ')">수정</button>';
+            html += '<button class="btn" style="color:var(--danger)" onclick="clearProjectData(' + project.id + ', \'' + escapeHtml(project.name).replace(/'/g, "\\'") + '\')">데이터 초기화</button>';
             html += '<button class="btn" style="color:var(--danger)" onclick="deleteProject(' + project.id + ', \'' + escapeHtml(project.name).replace(/'/g, "\\'") + '\')">삭제</button>';
             html += '</div>';
         }
@@ -133,6 +134,18 @@ async function deleteProject(id, name) {
         loadProjects();
     } catch (e) {
         showToast('삭제에 실패했습니다.', 'error');
+    }
+}
+
+// ===== Data Reset =====
+async function clearProjectData(id, name) {
+    if (!confirm('"' + name + '" 프로젝트의 WBS 데이터를 모두 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
+    try {
+        await API.delete('/api/wbs/' + id + '/items');
+        showToast('WBS 데이터가 초기화되었습니다.', 'success');
+        loadProjects();
+    } catch (e) {
+        showToast('초기화에 실패했습니다.', 'error');
     }
 }
 
