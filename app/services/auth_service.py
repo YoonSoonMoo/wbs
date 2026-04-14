@@ -78,7 +78,11 @@ def set_project_members(project_id, members):
 
 
 def ensure_admin_exists():
+    from flask import current_app
     db = get_db()
     count = db.execute("SELECT COUNT(*) as cnt FROM user").fetchone()['cnt']
     if count == 0:
-        register_user('윤순무', 'yoonsm@daou.co.kr', 'zaq12wsx', role='admin')
+        name = current_app.config.get('ADMIN_NAME', '관리자')
+        email = current_app.config.get('ADMIN_EMAIL', 'admin@example.com')
+        password = current_app.config.get('ADMIN_PASSWORD', 'admin1234')
+        register_user(name, email, password, role='admin')

@@ -11,7 +11,7 @@ def get_tree(project_id):
 
 def get_flat_list(project_id):
     """프로젝트의 WBS 항목을 평탄한 리스트로 반환한다 (그리드 뷰용)."""
-    return wbs_model.get_items_by_project(project_id)
+    return wbs_model.get_flat_items(project_id)
 
 
 def create_item(data):

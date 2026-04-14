@@ -83,10 +83,10 @@ tbody td.cell-status{color:var(--text-secondary);font-size:11.5px;}
 .col-subtask{width:68px;}
 .col-detail{width:270px;}
 .col-assignee{width:47px;}
-.col-plan-start{width:71px;}
-.col-plan-end{width:71px;}
-.col-act-start{width:71px;}
-.col-act-end{width:71px;}
+.col-plan-start{width:73px;}
+.col-plan-end{width:73px;}
+.col-act-start{width:73px;}
+.col-act-end{width:73px;}
 .col-effort{width:38px;}
 .col-progress{width:72px;}
 .col-status{width:320px;}

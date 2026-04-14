@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python -c \"from app import create_app; app = create_app\\(\\); print\\('OK'\\)\")",
+      "Bash(curl -s \"https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.js\")",
+      "Bash(grep -oP '.{0,30}en:\\\\[\"January.{0,200}')",
+      "Bash(pip show:*)"
+    ]
+  }
+}

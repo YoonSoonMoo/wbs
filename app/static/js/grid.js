@@ -103,10 +103,10 @@ function renderGrid() {
         h += '<td class="' + editClass + '"' + ceAttr + ' data-col="subtask">' + esc(row.subtask) + '</td>';
         h += '<td class="expandable" data-col="detail">' + esc(row.detail) + '</td>';
         h += '<td class="' + editClass + ' cell-center"' + ceAttr + ' data-col="assignee">' + esc(row.assignee) + '</td>';
-        h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="plan_start">' + esc(row.plan_start) + '</td>';
-        h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="plan_end">' + esc(row.plan_end) + '</td>';
-        h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="actual_start">' + esc(row.actual_start) + '</td>';
-        h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="actual_end">' + esc(row.actual_end) + '</td>';
+        h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="plan_start">' + esc(shortDate(row.plan_start)) + '</td>';
+        h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="plan_end">' + esc(shortDate(row.plan_end)) + '</td>';
+        h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="actual_start">' + esc(shortDate(row.actual_start)) + '</td>';
+        h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="actual_end">' + esc(shortDate(row.actual_end)) + '</td>';
         h += '<td class="' + editClass + ' cell-num"' + ceAttr + ' data-col="effort">' + esc(row.effort) + '</td>';
         h += '<td class="cell-progress" data-col="progress" data-idx="' + row._idx + '"' + (canEdit ? ' onclick="editProgress(this,' + row._idx + ')"' : '') + '><div class="progress-bar-cell"><div class="progress-bar-bg"><div class="progress-bar-fill" style="width:' + p + '%;background:' + pColor + '"></div></div><span class="progress-val">' + p + '%</span></div></td>';
         h += '<td class="expandable cell-status" data-col="status">' + esc(row.status) + '</td>';
@@ -304,6 +304,10 @@ function parseDate(s) {
     r = s.match(/^(\d{1,2})\.(\d{1,2})$/);
     if (r) { y = now.getFullYear(); m = parseInt(r[1]); d = parseInt(r[2]); return fmtDate(y, m, d); }
 
+    // M/d (no year, slash)
+    r = s.match(/^(\d{1,2})[\/](\d{1,2})$/);
+    if (r) { y = now.getFullYear(); m = parseInt(r[1]); d = parseInt(r[2]); return fmtDate(y, m, d); }
+
     // yyyy-M-d (not zero-padded)
     r = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
     if (r) { y = parseInt(r[1]); m = parseInt(r[2]); d = parseInt(r[3]); return fmtDate(y, m, d); }
@@ -323,8 +327,23 @@ function fmtDate(y, m, d) {
     return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
 }
 
+function shortDate(s) {
+    if (!s) return '';
+    var m = s.match(/^\d{4}(-\d{2}-\d{2})$/);
+    return m ? s.substring(2) : s;
+}
+
 // ===== Cell Editing =====
 var saveTimer = null;
+
+document.addEventListener('focusin', function(e) {
+    if (!e.target.classList.contains('editable')) return;
+    var col = e.target.dataset.col;
+    if (DATE_COLS.indexOf(col) < 0) return;
+    var tr = e.target.closest('tr'); if (!tr) return;
+    var idx = parseInt(tr.dataset.idx);
+    if (data[idx]) e.target.textContent = data[idx][col] || '';
+});
 
 document.addEventListener('focusout', function(e) {
     if (!e.target.classList.contains('editable')) return;
@@ -334,7 +353,7 @@ document.addEventListener('focusout', function(e) {
         var newVal = e.target.textContent.trim();
         // Date columns: normalize format
         if (DATE_COLS.indexOf(col) >= 0) newVal = parseDate(newVal);
-        e.target.textContent = newVal;
+        e.target.textContent = DATE_COLS.indexOf(col) >= 0 ? shortDate(newVal) : newVal;
         if (data[idx][col] !== newVal) {
             data[idx][col] = newVal;
             // Save to API
@@ -555,6 +574,7 @@ function insertRowAbove() {
     data.splice(contextRowIdx, 0, nr);
     API.post('/api/wbs/' + PROJECT_ID + '/items', { task_name: '', sort_order: contextRowIdx }).then(function(item) {
         nr._id = item.id;
+        saveSortOrder();
     });
     renderGrid();
 }
@@ -564,6 +584,7 @@ function insertRowBelow() {
     data.splice(contextRowIdx + 1, 0, nr);
     API.post('/api/wbs/' + PROJECT_ID + '/items', { task_name: '', sort_order: contextRowIdx + 1 }).then(function(item) {
         nr._id = item.id;
+        saveSortOrder();
     });
     renderGrid();
 }
@@ -580,6 +601,7 @@ function duplicateRow() {
     apiData.progress = parseInt(apiData.progress) || 0;
     API.post('/api/wbs/' + PROJECT_ID + '/items', apiData).then(function(item) {
         o._id = item.id;
+        saveSortOrder();
     });
     renderGrid();
 }

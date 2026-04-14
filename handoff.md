@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | https://github.com/YoonSoonMoo/wbs.git |
-| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선) |
+| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어) |
 
 ## 2. 기술 스택
 
@@ -19,7 +19,7 @@
 | Frontend | Jinja2 + Vanilla JS | | 서버 렌더링 + AJAX 하이브리드 |
 | Font | Noto Sans KR + JetBrains Mono | | Google Fonts CDN |
 | Excel | openpyxl | 3.1.5 | Excel Import/Export |
-| Gantt | Frappe Gantt | 0.6.1 | CDN, Gantt 차트 시각화 |
+| Gantt | Frappe Gantt | 0.6.1 | 로컬 번들 (한국어 로케일 패치), Gantt 차트 시각화 |
 | 환경변수 | python-dotenv | 1.1.0 | |
 | WSGI | waitress | 3.0.2 | Windows 프로덕션 서버 |
 | Test | pytest | 8.3.5 | |
@@ -51,13 +51,15 @@ wbs/
 │   │   └── api_import_export.py # Import/Export API (/api/io)
 │   ├── static/
 │   │   ├── css/
-│   │   │   ├── style.css        # 대시보드 스타일
-│   │   │   └── wbs.css          # WBS 그리드 전용 스타일 (template 기반)
+│   │   │   ├── style.css            # 대시보드 스타일
+│   │   │   ├── wbs.css              # WBS 그리드 전용 스타일 (template 기반)
+│   │   │   └── frappe-gantt.min.css # Frappe Gantt CSS (로컬)
 │   │   └── js/
-│   │       ├── app.js           # API 헬퍼, 토스트 알림, 유틸리티
-│   │       ├── grid.js          # WBS 그리드 UI (인라인편집, 확장편집, 복수선택, 날짜파싱, 컨텍스트메뉴)
-│   │       ├── gantt.js         # Gantt 차트 (Frappe Gantt 래퍼)
-│   │       └── dashboard.js     # 대시보드 (프로젝트 목록, 통계카드, 데이터 초기화)
+│   │       ├── app.js               # API 헬퍼, 토스트 알림, 유틸리티
+│   │       ├── grid.js              # WBS 그리드 UI (인라인편집, 확장편집, 복수선택, 날짜파싱, 컨텍스트메뉴)
+│   │       ├── gantt.js             # Gantt 차트 (Frappe Gantt 래퍼)
+│   │       ├── frappe-gantt.min.js  # Frappe Gantt 라이브러리 (로컬, ko 로케일 패치)
+│   │       └── dashboard.js         # 대시보드 (프로젝트 목록, 통계카드, 데이터 초기화)
 │   └── templates/
 │       ├── base.html            # 기본 레이아웃 (대시보드용, 사용자명/로그아웃 표시)
 │       ├── login.html           # 로그인 페이지
@@ -199,6 +201,7 @@ wbs/
 - `wbs_code_service.recalculate_codes()` 함수가 항목 추가/이동/삭제 시 전체 코드 재계산
 - 최상위: `1.0`, `2.0` / 하위: `1.1`, `1.2` / 세부: `1.1.1`, `1.1.2`
 - `sort_order`는 정렬용 정수, `wbs_code`는 표시용 문자열 → 분리 관리
+- 그리드 flat 조회 시 `sort_order` 기준 정렬 (`get_flat_items`), 트리 조회 시 `wbs_code` 기준
 
 ### DB 접근: sqlite3 직접 사용
 - ORM 없이 `sqlite3` 내장 모듈 + `Row` 팩토리로 dict-like 접근
@@ -289,10 +292,11 @@ python run.py
   - [x] 행번호 복수 선택 (클릭 토글, Shift 범위, Ctrl 개별, # 전체) + 일괄 삭제
   - [x] Excel 붙여넣기 (셀 직접 + 전용 모달)
   - [x] 날짜 자동 변환 — 다양한 형식 → yyyy-MM-dd (2026/4/12, 26.4.12, 04.12, 26년4월12일, 4월12일)
+  - [x] 날짜 표시 축약 — 그리드에서 yy-MM-dd 형식으로 표시 (shortDate), 편집 시 원본 yyyy-MM-dd 복원
   - [x] 셀 입력값 앞뒤 trim (프론트 focusout + 백엔드 모델 _trim 헬퍼)
   - [x] 진행률 색상 바 (회색→노랑→파랑→초록)
   - [x] 전용 CSS (wbs.css, Noto Sans KR + JetBrains Mono)
-- [x] Gantt 차트 뷰 (Frappe Gantt, 주간/월간/분기 보기)
+- [x] Gantt 차트 뷰 (Frappe Gantt, 주간/월간/분기 보기, 한국어 월 표시)
 - [x] API 동작 검증 완료 (프로젝트 생성, WBS 항목 CRUD, 계층 코드 자동생성)
 - [x] 인증/권한 시스템:
   - [x] user 테이블 + project_member 테이블 (002_auth.sql)
@@ -315,11 +319,18 @@ python run.py
   - [x] WBS 페이지 top-bar: "WBS" 문자를 프로젝트명으로 대체 (예: 택배허브 시스템 구축)
   - [x] WBS 페이지 top-bar: 로그인 유저 옆에 "📋 대시보드" 버튼 추가 (대시보드로 이동)
   - [x] Gantt 페이지: topbar에 프로젝트명 표시 (WBS와 동일)
+- [x] 버그수정 및 개선 (2026-04-14):
+  - [x] 드래그앤드롭 순서 저장 수정 — get_flat_list가 sort_order 기준 정렬하도록 변경 (기존 wbs_code 텍스트 정렬 → sort_order)
+  - [x] 행 삽입/복제 후 saveSortOrder() 호출 추가 — 삽입 위치가 리로드 후에도 유지
+  - [x] Gantt 차트 에러 수정 — frappe-gantt 0.6.1에 한국어 로케일 미포함으로 language:'ko' 사용 시 에러 발생, 로컬 번들에 ko 로케일 패치
+  - [x] Gantt 차트 한국어 월 표시 — CDN → 로컬 전환, 1월~12월 한국어 표기
+  - [x] 날짜 컬럼 폭 확장 — 71px → 73px (4개 날짜 컬럼)
+  - [x] 날짜 표시 축약 — yyyy-MM-dd → yy-MM-dd 표시 (DB 저장은 yyyy-MM-dd 유지)
+  - [x] openpyxl 미설치 해결 — Excel 다운로드 ModuleNotFoundError 수정
 
 ## 9. 미구현 / 향후 작업
 
 - [ ] 테스트 코드 작성 (`tests/`)
-- [ ] 드래그 앤 드롭 행 이동 (프론트엔드)
 - [ ] 변경 이력 추적
 - [ ] 인쇄/PDF 보고서 출력
 - [ ] Chart.js 대시보드 차트 (도넛, 막대 등)
