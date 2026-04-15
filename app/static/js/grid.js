@@ -6,6 +6,7 @@ var sortCol = null;
 var sortDir = 'asc';
 var selectedRows = {};  // data index -> true
 var lastClickedRowIdx = -1;
+var aiFilterIds = null; // AI 필터 활성 시 표시할 항목 ID 배열 (null = 필터 없음)
 
 // ===== Data Loading =====
 async function loadItems() {
@@ -42,8 +43,9 @@ function esc(s) {
 function renderGrid() {
     var tbody = document.getElementById('wbsBody');
     var sv = (document.getElementById('searchInput').value || '').toLowerCase();
-    var fs = document.getElementById('filterStatus').value;
     var fa = document.getElementById('filterAssignee').value;
+    var showDone = document.getElementById('filterDone') && document.getElementById('filterDone').checked;
+    var showMine = document.getElementById('filterMine') && document.getElementById('filterMine').checked;
     var filtered = [];
 
     for (var i = 0; i < data.length; i++) {
@@ -53,13 +55,10 @@ function renderGrid() {
             for (var k in r) { if (String(r[k]).toLowerCase().indexOf(sv) >= 0) { found = true; break; } }
             if (!found) continue;
         }
-        if (fs) {
-            var p = parseFloat(r.progress) || 0;
-            if (fs === 'done' && p < 100) continue;
-            if (fs === 'ing' && (p <= 0 || p >= 100)) continue;
-            if (fs === 'not' && p > 0) continue;
-        }
+        if (!showDone && (parseFloat(r.progress) || 0) >= 100) continue;
+        if (showMine && (typeof USER_NAME !== 'undefined') && r.assignee !== USER_NAME) continue;
         if (fa && r.assignee !== fa) continue;
+        if (aiFilterIds && aiFilterIds.indexOf(r._id) < 0) continue;
         filtered.push(r);
     }
 
@@ -74,7 +73,7 @@ function renderGrid() {
     var canEdit = (typeof USER_ROLE !== 'undefined' && USER_ROLE !== 'viewer');
     var ceAttr = canEdit ? ' contenteditable="true"' : '';
     var editClass = canEdit ? 'editable' : '';
-    var canDrag = canEdit && !sortCol && !sv && !fs && !fa;
+    var canDrag = canEdit && !sortCol && !sv && !fa && !showMine;
     var todayDate = new Date(); todayDate.setHours(0,0,0,0);
 
     var h = '';
@@ -97,7 +96,7 @@ function renderGrid() {
         }
         var trClassAttr = trClass.length ? ' class="' + trClass.join(' ') + '"' : '';
         h += '<tr data-idx="' + row._idx + '"' + trClassAttr + delayStyle + (canEdit ? ' oncontextmenu="showContext(event,' + row._idx + ')"' : '') + '>';
-        h += '<td class="row-num"' + (canDrag ? ' draggable="true"' : '') + ' onclick="handleRowSelect(event,' + row._idx + ')">' + (i + 1) + '</td>';
+        h += '<td class="row-num"' + (canDrag ? ' draggable="true"' : '') + ' onclick="handleRowSelect(event,' + row._idx + ')">' + (row._idx + 1) + '</td>';
         h += '<td class="' + editClass + '"' + ceAttr + ' data-col="category">' + esc(row.category) + '</td>';
         h += '<td class="' + editClass + '"' + ceAttr + ' data-col="task_name">' + esc(row.task_name) + '</td>';
         h += '<td class="' + editClass + '"' + ceAttr + ' data-col="subtask">' + esc(row.subtask) + '</td>';
@@ -122,18 +121,32 @@ function renderGrid() {
 
 // ===== Stats =====
 function updateStats(f) {
-    document.getElementById('statTotal').textContent = f.length;
-    var d = 0, p = 0, dl = 0;
-    for (var i = 0; i < f.length; i++) {
-        var pr = parseFloat(f[i].progress) || 0;
-        if (pr >= 100) d++;
-        else if (pr > 0) p++;
-        var s = (f[i].status || '').toLowerCase();
-        if (s.indexOf('지연') >= 0) dl++;
+    // 전체/완료/진행/지연은 필터와 무관하게 전체 data 기준으로 계산
+    var today = new Date(); today.setHours(0,0,0,0);
+    var done = 0, inProgress = 0, delayed = 0;
+    for (var i = 0; i < data.length; i++) {
+        var r = data[i];
+        var pr = parseFloat(r.progress) || 0;
+        if (pr >= 100) {
+            done++;
+        } else {
+            // 지연 판단: plan_end < 오늘 && 미완료 (행 하이라이트 기준과 동일)
+            var isDelayed = false;
+            if (r.plan_end) {
+                var pe = new Date(r.plan_end + (r.plan_end.indexOf('T') >= 0 ? '' : 'T00:00:00'));
+                if (!isNaN(pe) && pe < today) isDelayed = true;
+            }
+            if (isDelayed) {
+                delayed++;
+            } else if (pr > 0) {
+                inProgress++;
+            }
+        }
     }
-    document.getElementById('statDone').textContent = d;
-    document.getElementById('statProgress').textContent = p;
-    document.getElementById('statDelayed').textContent = dl;
+    document.getElementById('statTotal').textContent = data.length;
+    document.getElementById('statDone').textContent = done;
+    document.getElementById('statProgress').textContent = inProgress;
+    document.getElementById('statDelayed').textContent = delayed;
 }
 
 // ===== Alerts =====
@@ -158,7 +171,11 @@ function updateAlerts() {
         } else continue;
 
         if (ed < today) {
-            delayed.push({ detail: r.detail || r.subtask, days: Math.ceil((today - ed) / 864e5) });
+            var label = r.detail || r.subtask || r.task_name || '';
+            if (label.length > 12) label = label.substring(0, 12) + '...';
+            var assignee = r.assignee || '';
+            if (assignee) label += '(' + assignee + ')';
+            delayed.push({ label: label, days: Math.ceil((today - ed) / 864e5) });
         }
     }
     var sec = document.getElementById('alertSection');
@@ -171,7 +188,7 @@ function updateAlerts() {
         sec.className = 'alert-section';
         var ch = '';
         for (var i = 0; i < delayed.length; i++) {
-            ch += '<span class="alert-chip"><span class="chip-task">' + esc(delayed[i].detail) + '</span><span class="chip-days">+' + delayed[i].days + '일</span></span>';
+            ch += '<span class="alert-chip"><span class="chip-task">' + esc(delayed[i].label) + '</span><span class="chip-days">+' + delayed[i].days + '일</span></span>';
         }
         con.innerHTML = ch;
     }
@@ -878,6 +895,106 @@ function exportCSV() {
 
 function exportExcel() {
     window.open('/api/io/' + PROJECT_ID + '/export/excel', '_blank');
+}
+
+// ===== AI Assistant =====
+function sendAiQuery() {
+    var input = document.getElementById('aiInput');
+    var query = input.value.trim();
+    if (!query) return;
+
+    var bar = document.getElementById('aiBar');
+    var result = document.getElementById('aiResult');
+    var btn = document.getElementById('aiSendBtn');
+
+    bar.classList.add('loading');
+    btn.disabled = true;
+    btn.textContent = '처리중...';
+    result.style.display = 'none';
+
+    API.post('/api/wbs/' + PROJECT_ID + '/ai', { query: query })
+        .then(function(res) {
+            bar.classList.remove('loading');
+            btn.disabled = false;
+            btn.textContent = '전송';
+            result.style.display = 'block';
+
+            if (!res.success) {
+                result.innerHTML = '<span class="ai-close" onclick="closeAiResult()">&times;</span>'
+                    + '<div class="ai-error">' + esc(res.message) + '</div>';
+                return;
+            }
+
+            var html = '<span class="ai-close" onclick="closeAiResult()">&times;</span>';
+
+            if (res.action === 'query' && res.data && res.data.items) {
+                var items = res.data.items;
+                if (items.length === 0) {
+                    aiFilterIds = null;
+                    html += '<div class="ai-msg">' + esc(res.message) + '</div>';
+                    html += '<div style="color:var(--text-muted);padding:8px 0;">조건에 맞는 항목이 없습니다.</div>';
+                } else {
+                    // 그리드에 AI 필터 적용
+                    aiFilterIds = items.map(function(it) { return it.id; });
+                    renderGrid();
+
+                    // 메시지 + 인라인 통계
+                    var sm = res.data.summary;
+                    html += '<div class="ai-msg">' + esc(res.message) + '</div>';
+                    if (sm) {
+                        html += '<div class="ai-summary-bar">';
+                        html += '<span><strong>' + sm.count + '</strong>건</span>';
+                        html += '<span>공수 <strong>' + sm.total_effort + '</strong></span>';
+                        html += '<span>진행률 <strong>' + sm.avg_progress + '%</strong></span>';
+                        html += '</div>';
+                    }
+
+                    // AI 분석 코멘트 (있으면)
+                    if (res.insight) {
+                        html += '<div class="ai-insight">💡 ' + esc(res.insight).replace(/\n/g, '<br>') + '</div>';
+                    }
+
+                    // 일정 지연 칩 (지연 항목만)
+                    var delayItems = items.filter(function(it) { return (it.end_gap_days || 0) > 0; });
+                    if (delayItems.length > 0) {
+                        html += '<div class="ai-schedule-summary">';
+                        for (var i = 0; i < delayItems.length; i++) {
+                            var it = delayItems[i];
+                            html += '<span class="ai-gap-chip gap-delay">#' + it._row_number + ' ' + esc(it.task_name || '') + ' <strong>+' + it.end_gap_days + '일</strong></span>';
+                        }
+                        html += '</div>';
+                    }
+
+                    html += '<button class="btn ai-clear-btn" onclick="clearAiFilter()">필터 해제</button>';
+                }
+            } else if (res.action === 'add' || res.action === 'delete' || res.action === 'update') {
+                aiFilterIds = null;
+                loadItems();
+                html += '<div class="ai-msg">' + esc(res.message) + '</div>';
+            } else {
+                html += '<div class="ai-msg">' + esc(res.message) + '</div>';
+            }
+
+            result.innerHTML = html;
+        })
+        .catch(function(e) {
+            bar.classList.remove('loading');
+            btn.disabled = false;
+            btn.textContent = '전송';
+            result.style.display = 'block';
+            result.innerHTML = '<span class="ai-close" onclick="closeAiResult()">&times;</span>'
+                + '<div class="ai-error">요청 처리 중 오류가 발생했습니다.</div>';
+        });
+}
+
+function clearAiFilter() {
+    aiFilterIds = null;
+    renderGrid();
+    closeAiResult();
+}
+
+function closeAiResult() {
+    document.getElementById('aiResult').style.display = 'none';
 }
 
 // ===== Init =====

@@ -15,17 +15,14 @@
     <h1>{{ project_name }} <span>Work Breakdown Structure</span></h1>
     <div class="top-bar-actions">
       <span class="btn btn-top" style="cursor:default;opacity:0.7;">{{ user_name }}{% if project_role == 'admin' %} (관리자){% elif project_role == 'viewer' %} (뷰어){% endif %}</span>
-      <a href="/" class="btn btn-top">📋 대시보드</a>
       <a href="/logout" class="btn btn-top">로그아웃</a>
+      <a href="/" class="btn btn-top">📋 대시보드</a>
       <button class="btn btn-top" onclick="exportCSV()">📥 CSV</button>
       <button class="btn btn-top" onclick="exportExcel()">📥 Excel</button>
       {% if project_role != 'viewer' %}
       <button class="btn btn-top" onclick="showPasteModal()">📋 Excel 붙여넣기</button>
       {% endif %}
       <a href="/project/{{ project_id }}/gantt" class="btn btn-top">📊 Gantt</a>
-      {% if project_role != 'viewer' %}
-      <button class="btn btn-primary" onclick="addRow()">＋ 행 추가</button>
-      {% endif %}
     </div>
   </div>
 
@@ -37,28 +34,42 @@
     <div class="alert-items" id="alertItems"><span class="alert-empty">확인 중...</span></div>
   </div>
 
+  <!-- AI ASSISTANT -->
+  <div class="ai-bar" id="aiBar">
+    <div class="ai-bar-icon">AI Assistant</div>
+    <input type="text" class="ai-input" id="aiInput" placeholder="무엇을 도와드릴까요? (예: 지연된 업무 확인, 항목 추가, 담당자별 필터...)" onkeydown="if(event.key==='Enter')sendAiQuery()">
+    <button class="btn btn-primary ai-send-btn" id="aiSendBtn" onclick="sendAiQuery()">전송</button>
+    <div class="ai-result" id="aiResult" style="display:none;"></div>
+  </div>
+
   <!-- TOOLBAR -->
   <div class="toolbar">
     <div class="toolbar-group">
-      <input type="text" class="search-box" placeholder="🔍 검색 (업무, 담당자...)" id="searchInput" oninput="filterGrid()">
+      <span class="toolbar-label">빠른검색</span>
+      <input type="text" class="search-box" placeholder="업무, 담당자, 세부항목..." id="searchInput" oninput="filterGrid()">
     </div>
     <div class="toolbar-sep"></div>
     <div class="toolbar-group">
-      <select class="filter-select" id="filterStatus" onchange="filterGrid()">
-        <option value="">전체 진행률</option>
-        <option value="done">완료 (100%)</option>
-        <option value="ing">진행중 (1~99%)</option>
-        <option value="not">미착수 (0%)</option>
-      </select>
       <select class="filter-select" id="filterAssignee" onchange="filterGrid()">
         <option value="">전체 담당자</option>
       </select>
+    </div>
+    <div class="toolbar-sep"></div>
+    <div class="toolbar-group">
+      <label class="toolbar-check"><input type="checkbox" id="filterDone" onchange="filterGrid()"> 완료 포함</label>
+      <label class="toolbar-check"><input type="checkbox" id="filterMine" onchange="filterGrid()"> 나만의 태스크</label>
     </div>
     {% if project_role != 'viewer' %}
     <div class="toolbar-sep"></div>
     <div class="toolbar-group">
       <button class="btn btn-danger" id="deleteSelectedBtn" style="display:none" onclick="deleteSelectedRows()">✕ 선택 삭제</button>
       <span id="selectionInfo" style="font-size:11px;color:var(--text-muted);"></span>
+    </div>
+    {% endif %}
+    {% if project_role != 'viewer' %}
+    <div class="toolbar-sep"></div>
+    <div class="toolbar-group">
+      <button class="btn btn-primary" style="height:26px;font-size:11px;" onclick="addRow()">＋ 행 추가</button>
     </div>
     {% endif %}
     <div class="stats-bar">
@@ -132,6 +143,7 @@
 <script>
   const PROJECT_ID = {{ project_id }};
   const USER_ROLE = '{{ project_role }}';
+  const USER_NAME = '{{ user_name }}';
 </script>
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 <script src="{{ url_for('static', filename='js/grid.js') }}"></script>

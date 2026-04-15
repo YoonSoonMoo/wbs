@@ -3,6 +3,7 @@ from flask import Blueprint, g, jsonify, request, session
 from app.auth import api_login_required, project_access_required
 from app.models import wbs_item as wbs_model
 from app.services import dashboard_service, wbs_service
+from app.services.ai_assistant import process_command as ai_process_command
 from app.services.auth_service import get_project_role
 
 api_wbs_bp = Blueprint('api_wbs', __name__)
@@ -155,3 +156,36 @@ def get_dashboard(project_id):
         'by_assignee': dashboard_service.get_assignee_workload(project_id),
         'timeline': dashboard_service.get_timeline_data(project_id),
     })
+
+
+# --- 일정 지연 분석 ---
+
+@api_wbs_bp.route('/<int:project_id>/schedule-gaps', methods=['GET'])
+@api_login_required
+@project_access_required('viewer')
+def schedule_gaps(project_id):
+    """계획일 vs 실제일 차이가 있는 항목을 지연일수와 함께 반환한다."""
+    from app.services.ai_assistant import analyze_schedule_gaps
+    result = analyze_schedule_gaps(project_id)
+    return jsonify(result)
+
+
+# --- AI 어시스턴트 ---
+
+@api_wbs_bp.route('/<int:project_id>/ai', methods=['POST'])
+@api_login_required
+@project_access_required('viewer')
+def ai_assistant(project_id):
+    data = request.get_json()
+    if not data or not data.get('query'):
+        return jsonify({'success': False, 'message': '질의를 입력해주세요.'}), 400
+
+    user_query = data['query'].strip()
+    role = get_project_role(session['user_id'], project_id)
+
+    # viewer는 조회만 가능
+    result = ai_process_command(project_id, user_query)
+    if role == 'viewer' and result.get('action') in ('add', 'delete', 'update'):
+        return jsonify({'success': False, 'message': '읽기 전용 권한으로는 데이터를 변경할 수 없습니다.'}), 403
+
+    return jsonify(result)

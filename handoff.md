@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | https://github.com/YoonSoonMoo/wbs.git |
-| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어) |
+| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정) |
 
 ## 2. 기술 스택
 
@@ -41,6 +41,7 @@ wbs/
 │   │   ├── wbs_code_service.py  # WBS 코드 자동생성/재계산 로직
 │   │   ├── auth_service.py      # 인증 서비스 (register, login, get_project_role 등)
 │   │   ├── dashboard_service.py # 대시보드 통계 (카테고리별, 담당자별, 지연업무)
+│   │   ├── ai_assistant.py      # AI 어시스턴트 (Claude CLI subprocess, 자연어 → WBS 조회/추가/수정/삭제)
 │   │   └── import_export.py     # CSV/Excel Import/Export
 │   ├── routes/
 │   │   ├── __init__.py          # 블루프린트 등록 (register_blueprints)
@@ -181,6 +182,8 @@ wbs/
 | GET | `/api/wbs/<pid>/stats` | 통계 (전체/완료/진행/지연 건수, 평균 진행률) |
 | GET | `/api/wbs/<pid>/delayed` | 지연 업무 목록 |
 | GET | `/api/wbs/<pid>/dashboard` | 대시보드 종합 데이터 |
+| GET | `/api/wbs/<pid>/schedule-gaps` | 계획일 vs 실제일 차이 분석 (지연일수 포함) |
+| POST | `/api/wbs/<pid>/ai` | AI 어시스턴트 자연어 질의 처리 |
 
 ### Import/Export API (`/api/io`)
 | Method | URL | 설명 |
@@ -219,6 +222,14 @@ wbs/
 - 데코레이터 패턴: `@login_required` (페이지), `@api_login_required` (API), `@project_access_required(min_role)`, `@admin_required`
 - 프론트엔드: viewer일 때 편집 버튼 숨김 + contenteditable 비활성화 + 컨텍스트메뉴 차단 + API 403 응답 처리
 
+### AI 어시스턴트: Claude CLI subprocess 방식
+
+- `app/services/ai_assistant.py`의 `_call_claude()`가 `claude -p --max-turns 1` subprocess를 **동기 호출** (timeout=120초)
+- `process_command(project_id, query)` 진입점: 자연어 질의를 분석해 `_execute_query/add/delete/update()` 중 하나 선택 실행
+- 조회 결과는 `ids` 배열과 `display` 문자열로 반환 → 프론트엔드에서 해당 행만 그리드에 필터 표시
+- `analyze_schedule_gaps(project_id)`: 계획일 vs 실제 작업일 차이 분석 (지연일수, 공수 집계)
+- **동시성 제약**: Flask 개발 서버 단일 스레드 기준, 복수 사용자 동시 질의 시 Claude CLI 호출이 순차 처리됨 (최대 120초 × N 대기 가능). 개선 시 `threaded=True` 또는 Claude API 직접 호출(anthropic SDK) 전환 필요
+
 ### 프론트엔드: template/wbs-manage.html 기반 재구성
 - WBS 그리드 UI는 `template/wbs-manage.html`의 디자인/동작을 그대로 재현
 - `wbs.html`은 `base.html`을 상속하지 않는 독립 페이지 (전용 `wbs.css` 사용)
@@ -231,10 +242,12 @@ wbs/
 - SPA 프레임워크 미사용 → 빌드 도구 불필요, 즉시 개발 가능
 
 ### WBS 그리드 UI 상세 (template 호환)
-- **레이아웃**: `top-bar → alert-section → toolbar → grid → footer-bar`
+- **레이아웃**: `top-bar → alert-section → AI 입력바 → toolbar → grid → footer-bar`
 - **컬럼**: `# | 구분 | Task | 서브태스크 | 세부항목 | 담당자 | 계획시작 | 계획완료 | 실제시작 | 실제종료 | 공수 | 진행률 | 진행상태`
-- **알림 섹션**: 계획완료일 경과 + 진행률 100% 미만인 항목을 칩으로 표시 (지연일수 포함)
-- **필터**: 검색(전체 컬럼), 진행률(완료/진행중/미착수), 담당자(동적 드롭다운)
+- **행번호(#)**: 화면 순번이 아닌 DB 고유 ID (`item.id`) 표시
+- **알림 섹션**: 계획완료일 경과 + 진행률 100% 미만인 항목을 칩으로 표시 (지연일수 + 담당자 포함, 세부항목명 12자 초과 시 `...` 처리)
+- **AI 어시스턴트 입력바**: 알림 섹션 아래, 자연어 질의 입력 → 조회/추가/삭제/수정 지원, 조회 결과는 그리드에 필터 적용
+- **필터**: 빠른검색(전체 컬럼 검색), 완료 포함(체크박스), 나만의 태스크(체크박스), 담당자(드롭다운)
 - **정렬**: 컬럼 헤더 클릭 시 오름차순/내림차순 토글
 - **컨텍스트 메뉴**: 우클릭으로 행 삽입(위/아래), 행 복제, 행 삭제 / 복수 선택 시 선택 행 삭제
 - **행 복수 선택**: 행번호(#) 클릭 토글, Shift+클릭 범위, Ctrl+클릭 개별, 헤더 # 전체선택/해제 → 툴바 "선택 삭제" 버튼 / Delete 키
@@ -327,6 +340,21 @@ python run.py
   - [x] 날짜 컬럼 폭 확장 — 71px → 73px (4개 날짜 컬럼)
   - [x] 날짜 표시 축약 — yyyy-MM-dd → yy-MM-dd 표시 (DB 저장은 yyyy-MM-dd 유지)
   - [x] openpyxl 미설치 해결 — Excel 다운로드 ModuleNotFoundError 수정
+- [x] AI 어시스턴트 및 UI 개선 (2026-04-15):
+  - [x] AI 어시스턴트 도입 — `app/services/ai_assistant.py` (Claude CLI subprocess, 자연어 → 조회/추가/수정/삭제)
+  - [x] AI 입력바 UI — 알림 섹션 아래, "AI Assistant" 레이블, Enter 전송, 결과 그리드 필터 연동
+  - [x] AI 조회 결과를 그리드에 반영 — 해당 항목 ID만 필터링하여 화면 표시
+  - [x] 일정 지연 분석 API 추가 — `/api/wbs/<pid>/schedule-gaps` (계획일 vs 실제일 차이, 지연일수·공수 집계)
+  - [x] 지연 판단 로직 개선 — 실제종료일 미기입 시 미완료로 판단 (현재일 - 계획완료일로 계산)
+  - [x] AI 결과 시인성 개선 — 상태 이모지, 섹션 구분 표시 (심플 버전)
+  - [x] 툴바 UI 개선 — "빠른검색" 레이블 추가, 검색창 폭 확장, "완료 포함" 체크박스, "나만의 태스크" 체크박스, "행 추가" 버튼 위치 이동
+  - [x] "AI Assistant" 문구 변경 — AI 바 레이블 텍스트 통일
+  - [x] 오늘의 알림 개선 — 세부항목명 12자 초과 시 `...` 처리, 담당자명 칩에 함께 표시
+  - [x] 행번호(#) → 고유 ID 표시 — 화면 순번 대신 DB `item.id` 표시로 항목 식별 명확화
+  - [x] 통계 카운트 버그 수정 — 세 가지 버그 수정:
+    - 완료 카운트: "완료 포함" 미체크 시 항상 0이 되던 문제 → 전체 data 기준으로 계산
+    - 지연 카운트: status 텍스트('지연' 포함 여부) 기준 → plan_end < 오늘 날짜 기준으로 통일 (행 하이라이트와 일치)
+    - 진행/지연 중복: 지연된 항목이 진행 카운트에도 포함되던 문제 → 지연이면 지연만, 진행이면 진행만 카운트
 
 ## 9. 미구현 / 향후 작업
 
@@ -339,3 +367,4 @@ python run.py
 - [ ] 프로덕션 배포 설정 (waitress/gunicorn)
 - [ ] 비밀번호 변경 기능
 - [ ] 관리자 사용자 관리 UI (역할 변경, 삭제)
+- [ ] AI 어시스턴트 동시성 개선 — 현재 Claude CLI subprocess 동기 호출로 복수 사용자 동시 질의 시 순차 처리됨. 개선 방향: `threaded=True` (단기), Celery/RQ 작업 큐 (중기), anthropic SDK 직접 호출 (장기 권장)
