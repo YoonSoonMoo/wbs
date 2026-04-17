@@ -1,4 +1,4 @@
-from flask import Blueprint, g, redirect, render_template, url_for
+from flask import Blueprint, g, redirect, render_template, session, url_for
 
 from app.auth import login_required
 from app.models import project as project_model
@@ -8,8 +8,15 @@ main_bp = Blueprint('main', __name__)
 
 
 @main_bp.route('/')
-@login_required
 def index():
+    if session.get('user_id'):
+        return redirect(url_for('main.dashboard'))
+    return render_template('landing.html')
+
+
+@main_bp.route('/dashboard')
+@login_required
+def dashboard():
     return render_template('index.html')
 
 
@@ -27,7 +34,7 @@ def wbs_view(project_id):
 @login_required
 def gantt_view(project_id):
     role = get_project_role(g.user['id'], project_id)
-    if not role:
+    if not role or role == 'viewer':
         return redirect(url_for('main.index'))
     project = project_model.get_project(project_id)
     return render_template('gantt.html', project_id=project_id, project_role=role, project_name=project['name'])

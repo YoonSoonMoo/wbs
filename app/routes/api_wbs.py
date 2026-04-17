@@ -36,7 +36,7 @@ def list_items(project_id):
 
 @api_wbs_bp.route('/<int:project_id>/items', methods=['POST'])
 @api_login_required
-@project_access_required('participant')
+@project_access_required('developer')
 def create_item(project_id):
     data = request.get_json()
     if not data:
@@ -64,7 +64,7 @@ def update_item(item_id):
     data = request.get_json()
     if not data:
         return jsonify({'error': '수정할 데이터가 없습니다.'}), 400
-    result = wbs_service.update_item(item_id, data)
+    result = wbs_service.update_item(item_id, data, updated_by=session.get('user_name', ''))
     return jsonify(result)
 
 
@@ -77,7 +77,7 @@ def patch_item(item_id):
     data = request.get_json()
     if not data:
         return jsonify({'error': '수정할 데이터가 없습니다.'}), 400
-    result = wbs_service.update_item(item_id, data)
+    result = wbs_service.update_item(item_id, data, updated_by=session.get('user_name', ''))
     return jsonify(result)
 
 
@@ -106,12 +106,12 @@ def move_item(item_id):
 
 @api_wbs_bp.route('/<int:project_id>/items/batch', methods=['POST'])
 @api_login_required
-@project_access_required('participant')
+@project_access_required('developer')
 def batch_update(project_id):
     data = request.get_json()
     if not data or not isinstance(data.get('items'), list):
         return jsonify({'error': '항목 목록이 필요합니다.'}), 400
-    results = wbs_service.batch_update(project_id, data['items'])
+    results = wbs_service.batch_update(project_id, data['items'], updated_by=session.get('user_name', ''))
     return jsonify(results)
 
 
@@ -119,7 +119,7 @@ def batch_update(project_id):
 
 @api_wbs_bp.route('/<int:project_id>/items', methods=['DELETE'])
 @api_login_required
-@project_access_required('participant')
+@project_access_required('developer')
 def clear_items(project_id):
     from app.extensions import get_db
     db = get_db()
@@ -136,6 +136,16 @@ def clear_items(project_id):
 def get_stats(project_id):
     stats = wbs_service.get_stats(project_id)
     return jsonify(stats)
+
+
+@api_wbs_bp.route('/<int:project_id>/weekly-stats', methods=['GET'])
+@api_login_required
+@project_access_required('viewer')
+def get_weekly_stats(project_id):
+    """주차별 WBS 진척 통계를 반환한다."""
+    num_weeks = min(int(request.args.get('weeks', 8)), 26)
+    result = wbs_service.get_weekly_stats(project_id, num_weeks=num_weeks)
+    return jsonify(result)
 
 
 @api_wbs_bp.route('/<int:project_id>/delayed', methods=['GET'])
@@ -170,11 +180,72 @@ def schedule_gaps(project_id):
     return jsonify(result)
 
 
+# --- 지연 태스크 메일 발송 ---
+
+@api_wbs_bp.route('/<int:project_id>/send-delay-mail', methods=['POST'])
+@api_login_required
+@project_access_required('admin')
+def send_delay_mail(project_id):
+    """지연 태스크를 각 담당자에게 이메일로 알림 발송한다."""
+    from app.extensions import get_db
+    from app.models.project import get_project
+    from app.services.mail_service import build_delay_mail_html, send_html_mail
+
+    project = get_project(project_id)
+    if not project:
+        return jsonify({'error': '프로젝트를 찾을 수 없습니다.'}), 404
+
+    delayed = dashboard_service.get_delayed_items(project_id)
+    if not delayed:
+        return jsonify({'message': '지연된 태스크가 없습니다.', 'sent': 0, 'results': []})
+
+    # 담당자별 그룹화
+    by_assignee = {}
+    for item in delayed:
+        name = (item.get('assignee') or '').strip()
+        if not name:
+            continue
+        by_assignee.setdefault(name, []).append(item)
+
+    db = get_db()
+    base_url = request.host_url.rstrip('/')
+    project_url = f"{base_url}/project/{project_id}/wbs"
+
+    results = []
+    sent_count = 0
+    for assignee_name, tasks in by_assignee.items():
+        user_row = db.execute(
+            "SELECT email FROM user WHERE name = ?", (assignee_name,)
+        ).fetchone()
+        if not user_row or not user_row['email']:
+            results.append({'assignee': assignee_name, 'success': False, 'message': '등록된 이메일 없음'})
+            continue
+
+        html = build_delay_mail_html(assignee_name, tasks, project['name'], project_url)
+        ok, msg = send_html_mail(
+            to_address=user_row['email'],
+            to_name=assignee_name,
+            subject=f"[WBS 알림] {project['name']} 지연 태스크 {len(tasks)}건",
+            html_body=html,
+        )
+        results.append({
+            'assignee': assignee_name,
+            'email': user_row['email'],
+            'count': len(tasks),
+            'success': ok,
+            'message': msg,
+        })
+        if ok:
+            sent_count += 1
+
+    return jsonify({'sent': sent_count, 'total': len(by_assignee), 'results': results})
+
+
 # --- AI 어시스턴트 ---
 
 @api_wbs_bp.route('/<int:project_id>/ai', methods=['POST'])
 @api_login_required
-@project_access_required('viewer')
+@project_access_required('admin')
 def ai_assistant(project_id):
     data = request.get_json()
     if not data or not data.get('query'):

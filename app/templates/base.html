@@ -4,13 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}WBS 관리 시스템{% endblock %}</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     {% block head %}{% endblock %}
 </head>
 <body>
     <nav class="topbar">
         <div class="topbar-left">
-            {% block topbar_title %}<a href="/" class="logo">WBS Manager</a>{% endblock %}
+            {% block topbar_title %}<a href="/" class="logo"><img src="{{ url_for('static', filename='img/logo.png') }}" alt="Easy WBS" class="logo-img"></a>{% endblock %}
         </div>
         <div class="topbar-center">
             {% block topbar_center %}{% endblock %}

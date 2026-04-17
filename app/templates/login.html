@@ -4,13 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>로그인 - WBS 관리 시스템</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
 <div class="auth-container">
     <div class="auth-card">
-        <h2 class="auth-title">WBS 관리 시스템</h2>
+        <div class="auth-brand">
+            <span class="landing-logo-brand">Easy WBS</span>
+            <span class="landing-logo-credit">Provided by Claude</span>
+        </div>
         <p class="auth-subtitle">로그인</p>
 
         {% with messages = get_flashed_messages(with_categories=true) %}

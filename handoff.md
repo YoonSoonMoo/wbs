@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | https://github.com/YoonSoonMoo/wbs.git |
-| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정) |
+| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인) |
 
 ## 2. 기술 스택
 
@@ -20,6 +20,7 @@
 | Font | Noto Sans KR + JetBrains Mono | | Google Fonts CDN |
 | Excel | openpyxl | 3.1.5 | Excel Import/Export |
 | Gantt | Frappe Gantt | 0.6.1 | 로컬 번들 (한국어 로케일 패치), Gantt 차트 시각화 |
+| Chart | Chart.js | 4.4.1 | CDN, 통계 모달 차트 (도넛, 라인) |
 | 환경변수 | python-dotenv | 1.1.0 | |
 | WSGI | waitress | 3.0.2 | Windows 프로덕션 서버 |
 | Test | pytest | 8.3.5 | |
@@ -42,19 +43,23 @@ wbs/
 │   │   ├── auth_service.py      # 인증 서비스 (register, login, get_project_role 등)
 │   │   ├── dashboard_service.py # 대시보드 통계 (카테고리별, 담당자별, 지연업무)
 │   │   ├── ai_assistant.py      # AI 어시스턴트 (Claude CLI subprocess, 자연어 → WBS 조회/추가/수정/삭제)
-│   │   └── import_export.py     # CSV/Excel Import/Export
+│   │   ├── import_export.py     # CSV/Excel Import/Export
+│   │   └── mail_service.py      # 지연 태스크 이메일 알림 (SMTP HTML 메일 발송)
 │   ├── routes/
 │   │   ├── __init__.py          # 블루프린트 등록 (register_blueprints)
 │   │   ├── auth.py              # 인증 라우트 (/login, /register, /logout)
-│   │   ├── main.py              # 페이지 라우트 (/, /project/<id>/wbs, /gantt)
+│   │   ├── main.py              # 페이지 라우트 (/=landing 또는 /dashboard 리다이렉트, /dashboard, /project/<id>/wbs, /project/<id>/gantt)
 │   │   ├── api_project.py       # 프로젝트 REST API (/api/projects)
 │   │   ├── api_wbs.py           # WBS REST API (/api/wbs)
+│   │   ├── api_users.py         # 유저 관리 REST API (/api/users, admin 전용)
 │   │   └── api_import_export.py # Import/Export API (/api/io)
 │   ├── static/
 │   │   ├── css/
-│   │   │   ├── style.css            # 대시보드 스타일
+│   │   │   ├── style.css            # 대시보드/랜딩/인증 스타일 (Easy WBS 브랜드 그라디언트 텍스트 포함)
 │   │   │   ├── wbs.css              # WBS 그리드 전용 스타일 (template 기반)
 │   │   │   └── frappe-gantt.min.css # Frappe Gantt CSS (로컬)
+│   │   ├── img/
+│   │   │   └── logo.png             # 파비콘 및 WBS 페이지 로고 이미지
 │   │   └── js/
 │   │       ├── app.js               # API 헬퍼, 토스트 알림, 유틸리티
 │   │       ├── grid.js              # WBS 그리드 UI (인라인편집, 확장편집, 복수선택, 날짜파싱, 컨텍스트메뉴)
@@ -62,15 +67,18 @@ wbs/
 │   │       ├── frappe-gantt.min.js  # Frappe Gantt 라이브러리 (로컬, ko 로케일 패치)
 │   │       └── dashboard.js         # 대시보드 (프로젝트 목록, 통계카드, 데이터 초기화)
 │   └── templates/
-│       ├── base.html            # 기본 레이아웃 (대시보드용, 사용자명/로그아웃 표시)
-│       ├── login.html           # 로그인 페이지
-│       ├── register.html        # 회원가입 페이지
-│       ├── index.html           # 대시보드 페이지 (프로젝트 목록/생성, 멤버 할당 UI)
-│       ├── wbs.html             # WBS 그리드 뷰 (독립 페이지, template 기반, viewer 제한)
-│       └── gantt.html           # Gantt 차트 뷰
+│       ├── base.html            # 기본 레이아웃 (대시보드용, 탑바 로고 이미지, 파비콘 포함)
+│       ├── landing.html         # 랜딩 페이지 (비로그인 시 / 경로, Easy WBS 브랜드 + Provided by Claude 배지)
+│       ├── login.html           # 로그인 페이지 (Easy WBS 브랜드 텍스트 + 배지, 파비콘)
+│       ├── register.html        # 회원가입 페이지 (비밀번호 확인 필드, 실시간 일치 검증)
+│       ├── index.html           # 대시보드 페이지 (/dashboard, 프로젝트 목록, 유저 관리 모달)
+│       ├── wbs.html             # WBS 그리드 뷰 (독립 페이지, template 기반, 역할별 UI 게이팅)
+│       └── gantt.html           # Gantt 차트 뷰 (viewer 접근 차단)
 ├── migrations/
 │   ├── 001_initial.sql          # 초기 DB 스키마 (project, wbs_item 테이블)
-│   └── 002_auth.sql             # 인증 스키마 (user, project_member 테이블)
+│   ├── 002_auth.sql             # 인증 스키마 (user, project_member 테이블)
+│   ├── 003_stats.sql            # 통계 스키마 (updated_by, completed_at 컬럼, 완료 트리거)
+│   └── 004_user_mgmt.sql        # 유저 관리 (is_active 컬럼, participant → developer 이관)
 ├── instance/                    # SQLite DB 파일 (자동 생성, gitignore 대상)
 ├── tests/                       # 테스트 디렉토리 (미구현)
 ├── template/
@@ -119,6 +127,8 @@ wbs/
 | status | TEXT | 진행상태 (대기/진행중/완료/보류/지연) |
 | priority | TEXT | 우선순위 (low/medium/high/critical) |
 | is_milestone | INTEGER | 마일스톤 여부 (0/1) |
+| updated_by | TEXT | 최종 수정자 이름 (세션 user_name) |
+| completed_at | TEXT | 완료 일시 (트리거 자동, progress=100 시 설정) |
 
 ### user 테이블 (인증)
 | 컬럼 | 타입 | 설명 |
@@ -127,7 +137,8 @@ wbs/
 | name | TEXT NOT NULL | 이름 |
 | email | TEXT UNIQUE | 이메일 (로그인 ID) |
 | password_hash | TEXT NOT NULL | 비밀번호 해시 (werkzeug) |
-| role | TEXT | 전역 역할 (admin/participant/viewer) |
+| role | TEXT | 전역 역할 (admin/developer/viewer), CHECK 제약 적용 |
+| is_active | INTEGER | 활성 여부 (1=활성, 0=비활성). 비활성 계정은 로그인 차단 |
 | created_at | TEXT | 생성일시 |
 
 ### project_member 테이블 (프로젝트별 권한)
@@ -135,10 +146,20 @@ wbs/
 |------|------|------|
 | project_id | INTEGER FK | 프로젝트 |
 | user_id | INTEGER FK | 사용자 |
-| role | TEXT | 프로젝트 내 역할 (participant/viewer) |
+| role | TEXT | 프로젝트 내 역할 (developer/viewer), CHECK 제약 적용 |
 
 - PK: (project_id, user_id) 복합키
 - admin 역할 사용자는 project_member 없이도 모든 프로젝트에 접근 가능
+
+### schema_version 테이블 (마이그레이션 버전 추적)
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| version | INTEGER PK | 마이그레이션 파일 번호 (001, 002, ...) |
+| applied_at | TEXT | 적용 일시 |
+
+### 트리거
+- `trg_wbs_completed` — progress가 100으로 변경 시 `completed_at`을 현재 일시로 설정
+- `trg_wbs_uncompleted` — progress가 100 미만으로 변경 시 `completed_at`을 NULL로 초기화
 
 ### 인덱스
 - `idx_wbs_project` — project_id
@@ -149,11 +170,15 @@ wbs/
 
 ## 5. API 엔드포인트
 
-### 인증 (페이지 라우트)
+### 인증/페이지 라우트
 | Method | URL | 설명 |
 |--------|-----|------|
+| GET | `/` | 비로그인: 랜딩 페이지 / 로그인: `/dashboard`로 리다이렉트 |
+| GET | `/dashboard` | 대시보드 (프로젝트 목록), 로그인 필요 |
+| GET | `/project/<id>/wbs` | WBS 그리드 페이지 |
+| GET | `/project/<id>/gantt` | Gantt 차트 (viewer는 `/`로 리다이렉트) |
 | GET/POST | `/login` | 로그인 페이지 |
-| GET/POST | `/register` | 회원가입 페이지 |
+| GET/POST | `/register` | 회원가입 페이지 (비밀번호 확인 필드, 4자 이상) |
 | GET | `/logout` | 로그아웃 → /login 리다이렉트 |
 
 ### 프로젝트 API (`/api/projects`)
@@ -178,12 +203,22 @@ wbs/
 | DELETE | `/api/wbs/items/<id>` | 항목 삭제 (자식 포함 재귀 삭제) |
 | POST | `/api/wbs/items/<id>/move` | 항목 이동 (parent_id, sort_order) |
 | POST | `/api/wbs/<pid>/items/batch` | 일괄 수정 |
-| DELETE | `/api/wbs/<pid>/items` | 프로젝트 WBS 전체 초기화 (participant 이상) |
+| DELETE | `/api/wbs/<pid>/items` | 프로젝트 WBS 전체 초기화 (developer 이상) |
 | GET | `/api/wbs/<pid>/stats` | 통계 (전체/완료/진행/지연 건수, 평균 진행률) |
 | GET | `/api/wbs/<pid>/delayed` | 지연 업무 목록 |
 | GET | `/api/wbs/<pid>/dashboard` | 대시보드 종합 데이터 |
 | GET | `/api/wbs/<pid>/schedule-gaps` | 계획일 vs 실제일 차이 분석 (지연일수 포함) |
+| GET | `/api/wbs/<pid>/weekly-stats` | 주간 진척 통계 (?weeks=4, 이번 주 + 과거 N주) |
+| POST | `/api/wbs/<pid>/send-delay-mail` | 지연 태스크 담당자별 이메일 알림 발송 |
 | POST | `/api/wbs/<pid>/ai` | AI 어시스턴트 자연어 질의 처리 |
+
+### 유저 관리 API (`/api/users`, admin 전용)
+| Method | URL | 설명 |
+|--------|-----|------|
+| GET | `/api/users` | 유저 목록 (id, name, email, role, is_active, created_at) |
+| PUT | `/api/users/<id>/role` | 권한 변경 — body `{role: "admin\|developer\|viewer"}` |
+| POST | `/api/users/<id>/reset-password` | 비밀번호 리셋 — body `{password: "..."}` (4자 이상) |
+| PUT | `/api/users/<id>/active` | 활성/비활성 토글 — body `{is_active: 0\|1}` (본인 비활성화 금지) |
 
 ### Import/Export API (`/api/io`)
 | Method | URL | 설명 |
@@ -211,13 +246,28 @@ wbs/
 - `PRAGMA journal_mode=WAL` (동시 읽기 성능) + `PRAGMA foreign_keys=ON` (참조 무결성)
 - `updated_at` 트리거로 자동 갱신
 
+### 버전드 마이그레이션 시스템
+- `extensions.py`의 `init_db()`가 `schema_version` 테이블로 적용된 마이그레이션을 추적
+- `migrations/` 디렉토리에서 `NNN_*.sql` 파일을 버전 순으로 실행, 이미 적용된 버전은 건너뜀
+- `ALTER TABLE ADD COLUMN` 중복 실행 에러 방지 (매 서버 시작 시 안전하게 재실행 가능)
+
 ### 인증/권한: Flask session + werkzeug
 - 외부 라이브러리 추가 없음 (werkzeug는 Flask 내장)
 - `flask.session` 쿠키 기반 세션으로 로그인 상태 관리
 - `werkzeug.security.generate_password_hash` / `check_password_hash`로 비밀번호 해싱
-- 3단계 역할: **admin** (전역 모든 권한) / **participant** (프로젝트 내 읽기/쓰기) / **viewer** (프로젝트 내 읽기 전용)
+- 3단계 역할: **admin** (전역 모든 권한) / **developer** (프로젝트 내 읽기/쓰기) / **viewer** (프로젝트 내 읽기 전용)
 - admin은 `project_member` 없이도 모든 프로젝트에 접근 가능
-- participant/viewer는 `project_member`에 등록된 프로젝트만 접근 가능
+- developer/viewer는 `project_member`에 등록된 프로젝트만 접근 가능
+- `is_active=0` 계정은 자격 증명이 맞아도 로그인 차단 (`login_user`가 `_inactive` 플래그 반환 → 라우트가 플래시 메시지 표시)
+- 역할 레벨: `{'viewer': 0, 'developer': 1, 'admin': 2}` (`auth.py` `project_access_required` 비교 기준)
+- **전역 권한이 프로젝트 권한의 상한**: `get_project_role`은 `project_member.role`이 높아도 `user.role`을 초과할 수 없도록 clamp. 예) 전역 viewer가 `project_member.role='developer'`로 등록돼도 effective=`viewer`. 의도는 "관리자가 project_member를 잘못 설정해도 global role이 안전망" 역할
+- **그리드 역할별 UI 게이팅 (admin / developer / viewer)**:
+    - 그리드 CRUD (추가·수정·삭제·드래그·붙여넣기): admin ✓ / developer ✓ / viewer ✗
+    - Gantt 링크: admin ✓ / developer ✓ / viewer ✗ (서버: `/project/<id>/gantt`도 viewer → `/` 리다이렉트)
+    - Excel 붙여넣기 (모달 + 직접 paste): admin ✓ / developer ✓ / viewer ✗
+    - AI Assistant 바: admin ✓만, developer·viewer 숨김 (서버 `POST /api/wbs/<pid>/ai`도 admin 필요)
+    - 메일 전송 버튼: admin ✓만 (서버 `POST /api/wbs/<pid>/send-delay-mail`도 admin 필요)
+    - 오늘의 알림(지연 칩): admin=전체 / developer·viewer=본인 담당(`assignee === USER_NAME`)만
 - 서버 최초 실행 시 기본 관리자 자동 생성: `yoonsm@daou.co.kr` / `zaq12wsx` (이름: 윤순무)
 - 데코레이터 패턴: `@login_required` (페이지), `@api_login_required` (API), `@project_access_required(min_role)`, `@admin_required`
 - 프론트엔드: viewer일 때 편집 버튼 숨김 + contenteditable 비활성화 + 컨텍스트메뉴 차단 + API 403 응답 처리
@@ -356,15 +406,94 @@ python run.py
     - 지연 카운트: status 텍스트('지연' 포함 여부) 기준 → plan_end < 오늘 날짜 기준으로 통일 (행 하이라이트와 일치)
     - 진행/지연 중복: 지연된 항목이 진행 카운트에도 포함되던 문제 → 지연이면 지연만, 진행이면 진행만 카운트
 
+- [x] 주간 진척 통계 기능 (2026-04-16):
+  - [x] DB 마이그레이션 003_stats.sql — `updated_by` TEXT, `completed_at` TEXT 컬럼 추가
+  - [x] SQLite 트리거 — progress=100 시 `completed_at` 자동 설정, 100 미만 시 NULL 초기화
+  - [x] 버전드 마이그레이션 시스템 — `schema_version` 테이블로 적용 이력 관리, 중복 실행 방지
+  - [x] `wbs_service.get_weekly_stats()` — 주차별(월~일) 진척 통계 (이번 주 "진행중" + 과거 N주)
+    - 주차 라벨: 금요일 기준 월/주차 (예: 4월 3주차), `week_num = (friday.day - 1) // 7 + 1`
+    - 누적 집계 기준: 이번 주=오늘, 과거 주=금요일
+    - 신규 태스크: `created_at` 기준, 완료 태스크: `completed_at` (fallback `updated_at`) 기준
+    - 전주 대비 delta 계산 (전체/완료/진척률/공수)
+    - 현재(라이브) overview: 오늘 기준 전체 집계 + 전주 대비 delta
+    - 담당자별 현황: 태스크 수, 공수 합, 완료 수
+  - [x] API 엔드포인트 — `GET /api/wbs/<pid>/weekly-stats?weeks=4`
+  - [x] 통계 모달 UI — WBS 페이지 top-bar "📊 통계" 버튼, 모달 오버레이로 표시
+  - [x] KPI 카드 6개 — 전체 태스크, 완료 태스크, 전체 공수(d), 완료 공수(d), 현재 진척률, 주간 진척률
+    - 전주 대비 delta 뱃지 (+초록, -빨강, 0회색)
+    - 주간 진척률은 전주 대비 변동분 (+/-%) 별도 카드로 표시
+  - [x] 주차별 진척 현황 테이블 — 이번 주(진행중) + 과거 4주, 5컬럼:
+    - 주차 | 전체(+신규) | 완료(주간/누적) | 진척률 | 공수(총/완료)
+  - [x] 담당자별 현황 3-card 그리드 (template/wbs-stats-light.html 기반):
+    - 담당자별 태스크 수 (가로 바 차트)
+    - 담당자별 공수 합 d (가로 바 차트)
+    - 태스크 / 공수 비중 (Chart.js 도넛 차트 + 범례)
+  - [x] 주간 진척률 추이 라인 차트 (Chart.js):
+    - 진척률 % (좌축, 영역 채움), 완료 공수 d (우축, 점선), 전체 공수 d (우축, 점선)
+  - [x] 차트 메모리 관리 — 모달 닫기/재오픈 시 Chart.js 인스턴스 destroy 처리
+  - [x] `update_item()`, `batch_update()` — `updated_by` 파라미터 추가 (session user_name 전달)
+- [x] 지연 태스크 메일 알림 (2026-04-16):
+  - [x] `mail_service.py` — SMTP HTML 메일 발송 (`build_delay_mail_html`, `send_html_mail`)
+  - [x] API 엔드포인트 — `POST /api/wbs/<pid>/send-delay-mail`
+  - [x] 담당자별 그룹화 → user 테이블에서 이메일 조회 → 개별 발송
+  - [x] 알림 섹션 "📧 메일 전송" 버튼 (지연 태스크 존재 시 표시)
+
+- [x] 주간 진척 통계 지표 재정의 (2026-04-17):
+  - [x] 프로토타입 주간 표의 "진척률" 컬럼 프로그레스바 제거, % 텍스트만 표시 (`template/wbs-stats-light.html`)
+  - [x] 담당자별 바 차트 "완료/전체" 비율 시각화 — 2중 레이어 바 (전체=투명 22%, 완료=진한 색), 라벨 `완료/전체 · 완료율%` 형식. `template/wbs-stats-light.html`, `app/static/js/grid.js`, `app/static/css/wbs.css` 반영
+  - [x] `wbs_service.get_weekly_stats()` 담당자별 쿼리에 `completed_effort` 추가 — 프론트에서 공수 바의 완료분 계산에 사용
+  - [x] 주간완료/진척률 재정의 — `completed_week`는 `plan_end`와 `actual_end`가 모두 해당 주 범위 안에 있는 태스크 수. `planned_week` = plan_end가 해당 주 범위 안. `progress_rate = completed_week / planned_week * 100`
+  - [x] 프론트 주간완료 셀 `완료 / 예정` 포맷 표시 (예: `8 / 12`)
+  - [x] 누적완료 재정의 — `cumulative_completed_week` 필드: 관측 구간의 가장 오래된 주부터 `completed_week`의 러닝 합. 프론트 누적완료 컬럼이 이 값을 사용
+  - [x] 상단 KPI 라벨 정리 — "현재 진척률" → "전체 진척률" (누적), "주간 진척률" → "주간 진척률(현재)" (진행중 주차 `weekly[0].progress_rate`)
+  - [x] 주차별 표 증감 표시 정리 — 전체·주간완료·완료공수 옆의 델타(+N) 제거
+  - [x] 그리드 컨텍스트 메뉴 뷰포트 하단·우측 오버플로 보정 — `showContext()`가 메뉴를 화면 밖에서 측정 후 boundary 초과 시 `pad`만큼 떨어진 위치로 보정 (`app/static/js/grid.js`)
+
+- [x] 유저 관리 기능 + 역할 리네이밍 (2026-04-17):
+  - [x] 마이그레이션 `004_user_mgmt.sql` — `is_active` 컬럼 추가 (DEFAULT 1, NOT NULL), `role` CHECK 제약 `admin/developer/viewer`로 갱신, 기존 `participant` 데이터를 `developer`로 이관. SQLite CHECK 변경을 위해 `user`·`project_member` 테이블 재생성 (FK는 `PRAGMA foreign_keys=OFF`로 우회)
+  - [x] `auth_service.py` 함수 추가 — `update_user_role`, `reset_user_password`, `set_user_active`. `login_user`는 `is_active=0` 계정에 `{_inactive: True}` 반환
+  - [x] `auth.py` role_level participant → developer
+  - [x] 새 블루프린트 `api_users_bp` — `/api/users` 하위 4개 엔드포인트 모두 `@admin_required`. 본인 비활성화 시도는 400
+  - [x] 템플릿 컨텍스트 `user_id` 추가 (`app/__init__.py` `inject_user`) — 프론트의 본인 식별용
+  - [x] 프로젝트 목록 페이지 "유저 관리" 버튼 (admin 전용) + 모달 — 폭 1040px, sticky 헤더, 활성/비활성 뱃지, 권한 셀렉트, PW 리셋/활성 토글 버튼
+  - [x] `dashboard.js` 유저 관리 로직 — `loadUserMgmtList`, `changeUserRole`, `resetUserPw`, `toggleUserActive`. 헤더에 "전체 N명 · 활성 N명 · 비활성 N명" 카운트 표시
+  - [x] 유저 관리 모달 CSS — `app/static/css/style.css`의 `.user-mgmt-modal`/`.user-mgmt-tbl`/`.user-role-sel`/`.user-badge`/`.user-action-btns` (이름 `white-space:nowrap`, hover, danger 버튼 variant 등)
+  - [x] `'participant'` 문자열 일괄 교체 → `'developer'` (`app/routes/api_wbs.py`, `app/routes/api_import_export.py`, `app/static/js/dashboard.js` 멤버 드롭다운. UI 라벨 "참여자" → "개발자")
+  - [x] 전체 유저 패스워드 일괄 `local8707!`로 초기화 (백업: `instance/wbs.db.bak-20260417-133255`)
+
+- [x] 그리드 역할별 UI 게이팅 + 권한 clamp 버그 수정 (2026-04-17):
+  - [x] `wbs.html` 템플릿 게이팅 — Gantt 링크/AI 바/메일 버튼을 `{% if project_role == 'admin' %}`로 감쌈. Excel 붙여넣기는 기존 viewer 차단 유지
+  - [x] `grid.js` 로직 — `updateAlerts()`가 비-admin에게 본인 담당 태스크만 필터(`r.assignee === USER_NAME`). `sendDelayMail()`·`sendAiQuery()` admin 외 토스트 후 조기 리턴. paste 리스너 viewer 조기 리턴
+  - [x] 서버 방어 — `send-delay-mail` 및 `/ai` 엔드포인트 `project_access_required('admin')`로 상향. `main.py gantt_view`에서 viewer 요청 시 `/`로 리다이렉트
+  - [x] **권한 clamp 버그 수정** — `get_project_role`이 전역 권한을 상한으로 clamp하도록 변경. 이전에는 `project_member.role`이 전역 권한을 초과하면 viewer 유저가 editor 권한을 갖게 되던 문제(`project_member.role='developer'`로 할당된 전역 viewer가 그리드 CRUD 가능) 해결
+
+- [x] 메인 라우트 구조 변경 + 랜딩 페이지 추가 (2026-04-17):
+  - [x] `/` 경로 분기 — 비로그인: `landing.html` 렌더 / 로그인: `/dashboard`로 리다이렉트
+  - [x] `/dashboard` 라우트 분리 — 기존 `index.html`을 여기로 이전
+  - [x] `landing.html` — 히어로·Features·Workflow·권한·기술 스택·푸터 섹션, Chart.js/Gantt/AI Assistant 강조
+  - [x] Features 섹션 헤드라인 교체 — "현업에서 필요한 모든 기능" → "계획은 바뀌어도, WBS는 흔들리지 않게" (프로젝트 변수에 유연 대응하는 강점 강조)
+
+- [x] 회원가입 비밀번호 확인 필드 (2026-04-17):
+  - [x] `register.html` — `password_confirm` 입력 추가. 실시간 일치 메시지(`✓ 일치 / ✗ 불일치`) + 제출 시 JS 가드
+  - [x] `auth.py register()` — 불일치·4자 미만·누락 각각 플래시. 검증 통과 시에만 `register_user()` 호출
+  - [x] CSS `.pw-match-msg` / `.ok` / `.err` 추가
+
+- [x] 로고 및 파비콘, 브랜드 스타일 (2026-04-17):
+  - [x] `app/static/img/logo.png` 추가. 모든 템플릿 `<head>`에 `<link rel="icon" type="image/png">` 적용
+  - [x] 탑바 로고 이미지화 (`base.html`, `.logo-img` height 30px)
+  - [x] 랜딩 페이지 로고 이미지 삭제 → "Easy WBS" 그라디언트 텍스트(`.landing-logo-brand` 34px 헤더/26px 푸터, 파랑→보라→밝은파랑 그라디언트) + "Provided by Claude" pill 배지(`.landing-logo-credit` monospace, uppercase, letter-spacing)
+  - [x] 로그인 페이지 로고 이미지 삭제 → 랜딩과 동일 브랜드 텍스트 + 배지 (`auth-brand` 컨테이너, 30px)
+  - [x] 회원가입 페이지는 기존 로고 이미지 유지(필요 시 동일 교체 대기)
+
 ## 9. 미구현 / 향후 작업
 
 - [ ] 테스트 코드 작성 (`tests/`)
 - [ ] 변경 이력 추적
 - [ ] 인쇄/PDF 보고서 출력
-- [ ] Chart.js 대시보드 차트 (도넛, 막대 등)
+- [x] Chart.js 통계 모달 차트 (도넛, 라인) — 대시보드 페이지 차트는 미구현
 - [ ] Excel Import UI (파일 업로드 폼)
 - [ ] 에러 핸들링 고도화 (전역 에러 핸들러)
 - [ ] 프로덕션 배포 설정 (waitress/gunicorn)
-- [ ] 비밀번호 변경 기능
-- [ ] 관리자 사용자 관리 UI (역할 변경, 삭제)
+- [ ] 본인 비밀번호 변경 기능 (관리자 리셋은 구현 완료, 사용자 셀프 변경은 미구현)
+- [x] 관리자 사용자 관리 UI (역할 변경, 패스워드 리셋, 활성/비활성 토글) — 2026-04-17 완료. 유저 삭제는 미구현(비활성화로 대체)
 - [ ] AI 어시스턴트 동시성 개선 — 현재 Claude CLI subprocess 동기 호출로 복수 사용자 동시 질의 시 순차 처리됨. 개선 방향: `threaded=True` (단기), Celery/RQ 작업 큐 (중기), anthropic SDK 직접 호출 (장기 권장)

@@ -34,7 +34,7 @@ def export_excel(project_id):
 
 @api_import_export_bp.route('/<int:project_id>/import/csv', methods=['POST'])
 @api_login_required
-@project_access_required('participant')
+@project_access_required('developer')
 def import_csv(project_id):
     if 'file' not in request.files:
         return jsonify({'error': '파일이 필요합니다.'}), 400
@@ -48,7 +48,7 @@ def import_csv(project_id):
 
 @api_import_export_bp.route('/<int:project_id>/import/paste', methods=['POST'])
 @api_login_required
-@project_access_required('participant')
+@project_access_required('developer')
 def import_paste(project_id):
     data = request.get_json()
     if not data or not data.get('text'):

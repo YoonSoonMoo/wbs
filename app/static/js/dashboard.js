@@ -177,11 +177,11 @@ function addMemberRow(selectedUserId, selectedRole) {
         userOptions += '<option value="' + u.id + '"' + sel + '>' + escapeHtml(u.name) + ' (' + escapeHtml(u.email) + ')</option>';
     }
 
-    var partSel = (!selectedRole || selectedRole === 'participant') ? ' selected' : '';
+    var partSel = (!selectedRole || selectedRole === 'developer') ? ' selected' : '';
     var viewSel = (selectedRole === 'viewer') ? ' selected' : '';
 
     row.innerHTML = '<select class="member-user" style="flex:2;">' + userOptions + '</select>' +
-        '<select class="member-role" style="flex:1;"><option value="participant"' + partSel + '>참여자</option><option value="viewer"' + viewSel + '>뷰어</option></select>' +
+        '<select class="member-role" style="flex:1;"><option value="developer"' + partSel + '>개발자</option><option value="viewer"' + viewSel + '>뷰어</option></select>' +
         '<button type="button" class="btn-remove" onclick="this.parentElement.remove()">&times;</button>';
 
     list.appendChild(row);
@@ -208,6 +208,95 @@ function escapeHtml(str) {
     var div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+}
+
+// ===== User Management (admin only) =====
+async function openUserMgmtModal() {
+    document.getElementById('user-mgmt-modal').style.display = 'flex';
+    await loadUserMgmtList();
+}
+
+function closeUserMgmtModal() {
+    document.getElementById('user-mgmt-modal').style.display = 'none';
+}
+
+async function loadUserMgmtList() {
+    var tbody = document.getElementById('user-mgmt-tbody');
+    var sub = document.getElementById('user-mgmt-sub');
+    try {
+        var users = await API.get('/api/users');
+        if (users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="user-mgmt-empty">등록된 유저가 없습니다.</td></tr>';
+            if (sub) sub.textContent = '등록된 유저가 없습니다.';
+            return;
+        }
+        var activeCnt = users.filter(function(u) { return u.is_active; }).length;
+        if (sub) sub.textContent = '전체 ' + users.length + '명 · 활성 ' + activeCnt + '명 · 비활성 ' + (users.length - activeCnt) + '명';
+
+        var h = '';
+        for (var i = 0; i < users.length; i++) {
+            var u = users[i];
+            var isSelf = (u.id === CURRENT_USER_ID);
+            var roleOpts = ['admin', 'developer', 'viewer'].map(function(r) {
+                var label = r === 'admin' ? '관리자' : r === 'developer' ? '개발자' : '뷰어';
+                return '<option value="' + r + '"' + (u.role === r ? ' selected' : '') + '>' + label + '</option>';
+            }).join('');
+            var activeBadge = u.is_active
+                ? '<span class="user-badge user-badge-active">활성</span>'
+                : '<span class="user-badge user-badge-inactive">비활성</span>';
+            var toggleLabel = u.is_active ? '비활성화' : '활성화';
+            var toggleClass = u.is_active ? 'btn danger' : 'btn';
+            var toggleDisabled = (isSelf && u.is_active) ? ' disabled title="본인은 비활성화 불가"' : '';
+            var emailAttr = u.email.replace(/'/g, "\\'");
+            h += '<tr data-uid="' + u.id + '">'
+                + '<td class="user-mgmt-name">' + escapeHtml(u.name) + (isSelf ? '<span class="self-tag">나</span>' : '') + '</td>'
+                + '<td class="user-mgmt-email">' + escapeHtml(u.email) + '</td>'
+                + '<td><select class="user-role-sel" onchange="changeUserRole(' + u.id + ', this.value)">' + roleOpts + '</select></td>'
+                + '<td>' + activeBadge + '</td>'
+                + '<td><div class="user-action-btns">'
+                + '<button class="btn" onclick="resetUserPw(' + u.id + ', \'' + emailAttr + '\')">PW 리셋</button>'
+                + '<button class="' + toggleClass + '" onclick="toggleUserActive(' + u.id + ', ' + (u.is_active ? 0 : 1) + ')"' + toggleDisabled + '>' + toggleLabel + '</button>'
+                + '</div></td>'
+                + '</tr>';
+        }
+        tbody.innerHTML = h;
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="5" class="user-mgmt-empty" style="color:#e84040;">유저 목록을 불러올 수 없습니다.</td></tr>';
+    }
+}
+
+async function changeUserRole(userId, role) {
+    try {
+        await API.put('/api/users/' + userId + '/role', { role: role });
+        showToast('권한이 변경되었습니다.', 'success');
+    } catch (e) {
+        showToast('권한 변경 실패', 'error');
+        loadUserMgmtList();
+    }
+}
+
+async function resetUserPw(userId, email) {
+    var pw = prompt('새 비밀번호를 입력하세요 (' + email + '):');
+    if (!pw) return;
+    if (pw.length < 4) { showToast('비밀번호는 4자 이상이어야 합니다.', 'error'); return; }
+    try {
+        await API.post('/api/users/' + userId + '/reset-password', { password: pw });
+        showToast('비밀번호가 초기화되었습니다.', 'success');
+    } catch (e) {
+        showToast('비밀번호 초기화 실패', 'error');
+    }
+}
+
+async function toggleUserActive(userId, nextActive) {
+    var msg = nextActive ? '이 유저를 활성화할까요?' : '이 유저를 비활성화할까요? 로그인할 수 없게 됩니다.';
+    if (!confirm(msg)) return;
+    try {
+        await API.put('/api/users/' + userId + '/active', { is_active: nextActive });
+        showToast(nextActive ? '활성화 완료' : '비활성화 완료', 'success');
+        loadUserMgmtList();
+    } catch (e) {
+        showToast('상태 변경 실패', 'error');
+    }
 }
 
 // ===== Init =====

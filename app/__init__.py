@@ -29,6 +29,7 @@ def create_app(config_name=None):
     def inject_user():
         return dict(
             current_user=g.get('user'),
+            user_id=session.get('user_id'),
             user_name=session.get('user_name'),
             user_role=session.get('user_role'),
         )

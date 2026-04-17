@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Easy WBS - 체계적인 프로젝트 관리의 시작</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="landing-body">
+
+<header class="landing-nav">
+    <div class="landing-nav-inner">
+        <a href="/" class="landing-logo">
+            <span class="landing-logo-brand">Easy WBS</span>
+            <span class="landing-logo-credit">Provided by Claude</span>
+        </a>
+        <nav class="landing-menu">
+            <a href="#features">주요 기능</a>
+            <a href="#workflow">작업 흐름</a>
+            <a href="#stack">기술 스택</a>
+        </nav>
+        <div class="landing-nav-right">
+            <a href="/register" class="landing-nav-link">회원가입</a>
+            <a href="/login" class="landing-nav-btn">로그인</a>
+        </div>
+    </div>
+</header>
+
+<section class="landing-hero">
+    <div class="landing-hero-inner">
+        <div class="landing-hero-eyebrow">Work Breakdown Structure Management</div>
+        <h1 class="landing-hero-title">
+            체계적인 프로젝트 관리의 <span class="accent">시작</span>
+        </h1>
+        <p class="landing-hero-sub">
+            계층적 WBS 그리드, Gantt 차트, AI 어시스턴트까지.<br>
+            프로젝트의 모든 작업을 한 곳에서 계획하고 추적하세요.
+        </p>
+        <div class="landing-hero-cta">
+            <a href="/login" class="landing-btn landing-btn-primary">시작하기 →</a>
+            <a href="#features" class="landing-btn landing-btn-ghost">주요 기능 살펴보기</a>
+        </div>
+        <div class="landing-hero-meta">
+            <span>✓ 설치 없이 웹 브라우저에서 바로 사용</span>
+            <span>✓ Excel/CSV 가져오기·내보내기</span>
+            <span>✓ 권한별 협업 지원</span>
+        </div>
+    </div>
+    <div class="landing-hero-visual" aria-hidden="true">
+        <div class="lh-grid">
+            <div class="lh-grid-head">
+                <span>#</span><span>구분</span><span>Task</span><span>담당자</span><span>진행률</span>
+            </div>
+            <div class="lh-grid-row"><span>101</span><span class="tag">기획</span><span>요구사항 분석</span><span>윤순무</span><span><i class="bar" style="--p:100%"></i></span></div>
+            <div class="lh-grid-row"><span>102</span><span class="tag">설계</span><span>아키텍처 설계</span><span>김개발</span><span><i class="bar" style="--p:80%"></i></span></div>
+            <div class="lh-grid-row"><span>103</span><span class="tag tag-dev">개발</span><span>API 구현</span><span>이프론트</span><span><i class="bar" style="--p:55%"></i></span></div>
+            <div class="lh-grid-row"><span>104</span><span class="tag tag-dev">개발</span><span>그리드 UI</span><span>박디자인</span><span><i class="bar" style="--p:30%"></i></span></div>
+            <div class="lh-grid-row"><span>105</span><span class="tag tag-qa">QA</span><span>통합 테스트</span><span>-</span><span><i class="bar" style="--p:10%"></i></span></div>
+        </div>
+    </div>
+</section>
+
+<section class="landing-section" id="features">
+    <div class="landing-section-inner">
+        <div class="landing-section-head">
+            <div class="landing-kicker">Features</div>
+            <h2>WBS 관리, 스트레스 없이</h2>
+            <p>WBS를 작성하고 꾸준히 유지하는 일도 결국 공수입니다. Easy WBS는 코드 자동 생성, 날짜 자동 변환, AI 자연어 편집, 원클릭 통계·알림까지 반복 작업을 자동화해 관리자와 담당자 모두가 WBS에 쓰는 에너지를 최소로 줄여줍니다.</p>
+        </div>
+
+        <div class="landing-features">
+            <article class="feature-card">
+                <div class="feature-icon">▦</div>
+                <h3>계층형 WBS 그리드</h3>
+                <p>Excel과 같은 인라인 편집, 복수 행 선택, 드래그 이동, Excel 붙여넣기를 지원합니다. 재귀 CTE 기반 트리 조회로 대규모 작업도 즉시 표시됩니다.</p>
+                <ul class="feature-list">
+                    <li>WBS 코드 자동 생성 (1.0 / 1.1 / 1.1.1)</li>
+                    <li>날짜 자유 입력 자동 변환 (2026/4/12 → 2026-04-12)</li>
+                    <li>컨텍스트 메뉴로 행 삽입·복제·삭제</li>
+                </ul>
+            </article>
+
+            <article class="feature-card">
+                <div class="feature-icon">◎</div>
+                <h3>Gantt 차트 시각화</h3>
+                <p>Frappe Gantt 기반의 인터랙티브 차트로 일정을 한눈에. 주간/월간/분기 단위 보기와 한국어 로케일을 지원합니다.</p>
+                <ul class="feature-list">
+                    <li>계획 vs 실제 일정 비교</li>
+                    <li>마일스톤 하이라이트</li>
+                    <li>담당자별 색상 구분</li>
+                </ul>
+            </article>
+
+            <article class="feature-card">
+                <div class="feature-icon">✦</div>
+                <h3>AI 어시스턴트</h3>
+                <p>Claude 기반 자연어 명령으로 조회·추가·수정·삭제를 한 줄에. "지연된 태스크 보여줘"와 같은 질의를 그리드에 즉시 반영합니다.</p>
+                <ul class="feature-list">
+                    <li>자연어 → WBS CRUD 자동 매핑</li>
+                    <li>일정 지연 분석 리포트</li>
+                    <li>결과를 그리드 필터로 즉시 적용</li>
+                </ul>
+            </article>
+
+            <article class="feature-card">
+                <div class="feature-icon">◴</div>
+                <h3>주간 진척 통계</h3>
+                <p>이번 주 진행분과 과거 4주 추이를 한 번에. KPI 카드·주차별 표·담당자별 분포·라인 차트로 진척률을 정량화합니다.</p>
+                <ul class="feature-list">
+                    <li>전주 대비 delta 뱃지</li>
+                    <li>담당자별 완료/전체 비율 차트</li>
+                    <li>누적 진척률 추이 라인 차트</li>
+                </ul>
+            </article>
+
+            <article class="feature-card">
+                <div class="feature-icon">⇅</div>
+                <h3>Excel · CSV 연동</h3>
+                <p>기존에 사용하던 Excel 시트도 그대로. 한 번의 업로드로 전체 WBS를 가져오고, 필요할 때 바로 내보낼 수 있습니다.</p>
+                <ul class="feature-list">
+                    <li>Excel (.xlsx) / CSV (UTF-8 BOM) 지원</li>
+                    <li>탭 구분 텍스트 붙여넣기</li>
+                    <li>셀 다중 붙여넣기 자동 감지</li>
+                </ul>
+            </article>
+
+            <article class="feature-card">
+                <div class="feature-icon">✉</div>
+                <h3>지연 알림 메일</h3>
+                <p>계획 완료일을 넘긴 태스크를 담당자별로 그룹화해 SMTP HTML 메일로 자동 발송. 수동 독촉은 이제 그만.</p>
+                <ul class="feature-list">
+                    <li>담당자별 지연 목록 자동 구성</li>
+                    <li>한 번의 클릭으로 일괄 발송</li>
+                    <li>HTML 포맷으로 가독성 확보</li>
+                </ul>
+            </article>
+        </div>
+    </div>
+</section>
+
+<section class="landing-section landing-section-alt" id="workflow">
+    <div class="landing-section-inner">
+        <div class="landing-section-head">
+            <div class="landing-kicker">Workflow</div>
+            <h2>3단계로 끝내는 WBS 관리</h2>
+            <p>복잡한 설정이나 학습 곡선 없이, 로그인 후 바로 사용하세요.</p>
+        </div>
+
+        <div class="landing-steps">
+            <div class="step-card">
+                <div class="step-num">01</div>
+                <h3>프로젝트 생성 및 멤버 할당</h3>
+                <p>관리자가 프로젝트를 만들고 멤버를 개발자 / 뷰어 권한으로 초대합니다. 프로젝트별 접근 제어가 기본 적용됩니다.</p>
+            </div>
+            <div class="step-card">
+                <div class="step-num">02</div>
+                <h3>WBS 작성 및 공수 배분</h3>
+                <p>Excel 시트를 붙여넣거나 그리드에 직접 입력. WBS 코드·일정·담당자·공수를 실시간으로 저장합니다.</p>
+            </div>
+            <div class="step-card">
+                <div class="step-num">03</div>
+                <h3>추적 · 통계 · 알림</h3>
+                <p>Gantt 차트로 일정을 모니터링하고, 주간 통계로 진척률을 측정하며, 지연 시 자동 메일 알림으로 대응합니다.</p>
+            </div>
+        </div>
+
+        <div class="landing-roles">
+            <h3>권한 체계</h3>
+            <div class="role-grid">
+                <div class="role-card">
+                    <div class="role-badge role-admin">Admin</div>
+                    <p>전역 관리자. 프로젝트·유저 생성·수정·삭제, 권한 부여, 패스워드 리셋, 모든 프로젝트 접근 가능.</p>
+                </div>
+                <div class="role-card">
+                    <div class="role-badge role-dev">Developer</div>
+                    <p>프로젝트 참여자. 할당된 프로젝트의 WBS 항목을 추가·수정·삭제할 수 있습니다.</p>
+                </div>
+                <div class="role-card">
+                    <div class="role-badge role-viewer">Viewer</div>
+                    <p>읽기 전용. 데이터 조회는 가능하나 편집 버튼은 자동으로 비활성화됩니다.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="landing-section" id="stack">
+    <div class="landing-section-inner">
+        <div class="landing-section-head">
+            <div class="landing-kicker">Tech Stack</div>
+            <h2>가볍고 검증된 기술 스택</h2>
+            <p>별도의 서버·DB 설치 없이 Python 하나로 동작합니다. Windows / Linux / macOS 모두 지원합니다.</p>
+        </div>
+        <div class="stack-grid">
+            <div class="stack-item"><strong>Flask 3.1</strong><span>앱 팩토리 패턴</span></div>
+            <div class="stack-item"><strong>SQLite</strong><span>내장 DB · WAL 모드</span></div>
+            <div class="stack-item"><strong>Vanilla JS</strong><span>빌드 도구 불필요</span></div>
+            <div class="stack-item"><strong>Frappe Gantt</strong><span>Gantt 차트</span></div>
+            <div class="stack-item"><strong>Chart.js</strong><span>통계 시각화</span></div>
+            <div class="stack-item"><strong>openpyxl</strong><span>Excel 입출력</span></div>
+            <div class="stack-item"><strong>Claude CLI</strong><span>AI 어시스턴트</span></div>
+            <div class="stack-item"><strong>waitress</strong><span>Windows 프로덕션</span></div>
+        </div>
+    </div>
+</section>
+
+<section class="landing-cta">
+    <div class="landing-cta-inner">
+        <h2>지금 바로 프로젝트를 시작하세요</h2>
+        <p>로그인 후 첫 프로젝트를 생성하는 데 1분이면 충분합니다.</p>
+        <a href="/login" class="landing-btn landing-btn-primary landing-btn-lg">시작하기 →</a>
+    </div>
+</section>
+
+<footer class="landing-footer">
+    <div class="landing-footer-inner">
+        <div class="landing-footer-top">
+            <div class="landing-footer-brand">
+                <span class="landing-logo-brand">Easy WBS</span>
+                <span class="landing-logo-credit">Provided by Claude</span>
+            </div>
+            <div class="landing-footer-links">
+                <a href="#features">주요 기능</a>
+                <a href="#workflow">작업 흐름</a>
+                <a href="#stack">기술 스택</a>
+                <a href="/login">로그인</a>
+            </div>
+        </div>
+        <div class="landing-footer-bottom">
+            <address class="landing-footer-address">
+                우)13453 경기도 성남시 수정구 금토로 69, 다우디지털스퀘어 8층
+                <span class="sep">|</span> 대표전화 : 070-8707-1000
+                <span class="sep">|</span> 사업자등록번호 : 220-81-02810
+                <span class="sep">|</span> 대표이사 : 김윤덕
+            </address>
+            <span class="landing-footer-copy">ⓒ 2026 DAOU Tech. Commerce Development Headquarters, INC. All rights reserved.</span>
+        </div>
+    </div>
+</footer>
+
+</body>
+</html>

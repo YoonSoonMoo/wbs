@@ -4,8 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WBS 관리</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/wbs.css') }}">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="app-layout">
@@ -17,12 +19,15 @@
       <span class="btn btn-top" style="cursor:default;opacity:0.7;">{{ user_name }}{% if project_role == 'admin' %} (관리자){% elif project_role == 'viewer' %} (뷰어){% endif %}</span>
       <a href="/logout" class="btn btn-top">로그아웃</a>
       <a href="/" class="btn btn-top">📋 대시보드</a>
+      <button class="btn btn-top" onclick="openStatsModal()">📊 통계</button>
       <button class="btn btn-top" onclick="exportCSV()">📥 CSV</button>
       <button class="btn btn-top" onclick="exportExcel()">📥 Excel</button>
       {% if project_role != 'viewer' %}
       <button class="btn btn-top" onclick="showPasteModal()">📋 Excel 붙여넣기</button>
       {% endif %}
+      {% if project_role != 'viewer' %}
       <a href="/project/{{ project_id }}/gantt" class="btn btn-top">📊 Gantt</a>
+      {% endif %}
     </div>
   </div>
 
@@ -32,27 +37,26 @@
     <span class="alert-label">오늘의 알림</span>
     <span class="alert-count" id="alertCount">0</span>
     <div class="alert-items" id="alertItems"><span class="alert-empty">확인 중...</span></div>
+    {% if project_role == 'admin' %}
+    <button class="btn btn-alert-mail" id="alertMailBtn" onclick="sendDelayMail()" style="display:none" title="지연 태스크를 담당자에게 메일로 알림">📧 메일 전송</button>
+    {% endif %}
   </div>
 
-  <!-- AI ASSISTANT -->
+  {% if project_role == 'admin' %}
+  <!-- AI ASSISTANT (admin 전용) -->
   <div class="ai-bar" id="aiBar">
     <div class="ai-bar-icon">AI Assistant</div>
     <input type="text" class="ai-input" id="aiInput" placeholder="무엇을 도와드릴까요? (예: 지연된 업무 확인, 항목 추가, 담당자별 필터...)" onkeydown="if(event.key==='Enter')sendAiQuery()">
     <button class="btn btn-primary ai-send-btn" id="aiSendBtn" onclick="sendAiQuery()">전송</button>
     <div class="ai-result" id="aiResult" style="display:none;"></div>
   </div>
+  {% endif %}
 
   <!-- TOOLBAR -->
   <div class="toolbar">
     <div class="toolbar-group">
       <span class="toolbar-label">빠른검색</span>
       <input type="text" class="search-box" placeholder="업무, 담당자, 세부항목..." id="searchInput" oninput="filterGrid()">
-    </div>
-    <div class="toolbar-sep"></div>
-    <div class="toolbar-group">
-      <select class="filter-select" id="filterAssignee" onchange="filterGrid()">
-        <option value="">전체 담당자</option>
-      </select>
     </div>
     <div class="toolbar-sep"></div>
     <div class="toolbar-group">
@@ -84,7 +88,7 @@
   <div class="grid-wrapper">
     <table id="wbsTable">
       <thead><tr>
-        <th class="col-rownum">#</th>
+        <th class="col-rownum">TID</th>
         <th class="col-category sortable" data-col="category">구분</th>
         <th class="col-task sortable" data-col="task_name">Task</th>
         <th class="col-subtask sortable" data-col="subtask">서브태스크</th>
@@ -125,6 +129,22 @@
   <div class="context-menu-sep"></div>
   <div class="context-menu-item danger" id="ctxDeleteSingle" onclick="deleteRow()">✕ 행 삭제</div>
   <div class="context-menu-item danger" id="ctxDeleteSelected" style="display:none" onclick="deleteSelectedRows()">✕ 선택 행 삭제</div>
+</div>
+
+<!-- STATS MODAL -->
+<div class="modal-overlay" id="statsModal" onclick="if(event.target===this)closeStatsModal()">
+  <div class="stats-modal">
+    <div class="stats-modal-hdr">
+      <div class="stats-modal-hdr-left">
+        <div class="stats-hdr-eyebrow">WBS Statistics</div>
+        <div class="stats-hdr-title">주간 진척 통계</div>
+      </div>
+      <button class="btn stats-close-btn" onclick="closeStatsModal()">✕ 닫기</button>
+    </div>
+    <div class="stats-modal-body" id="statsModalBody">
+      <div class="stats-loading">통계 데이터를 불러오는 중...</div>
+    </div>
+  </div>
 </div>
 
 <!-- PASTE MODAL -->

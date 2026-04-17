@@ -43,7 +43,6 @@ function esc(s) {
 function renderGrid() {
     var tbody = document.getElementById('wbsBody');
     var sv = (document.getElementById('searchInput').value || '').toLowerCase();
-    var fa = document.getElementById('filterAssignee').value;
     var showDone = document.getElementById('filterDone') && document.getElementById('filterDone').checked;
     var showMine = document.getElementById('filterMine') && document.getElementById('filterMine').checked;
     var filtered = [];
@@ -57,7 +56,6 @@ function renderGrid() {
         }
         if (!showDone && (parseFloat(r.progress) || 0) >= 100) continue;
         if (showMine && (typeof USER_NAME !== 'undefined') && r.assignee !== USER_NAME) continue;
-        if (fa && r.assignee !== fa) continue;
         if (aiFilterIds && aiFilterIds.indexOf(r._id) < 0) continue;
         filtered.push(r);
     }
@@ -73,7 +71,7 @@ function renderGrid() {
     var canEdit = (typeof USER_ROLE !== 'undefined' && USER_ROLE !== 'viewer');
     var ceAttr = canEdit ? ' contenteditable="true"' : '';
     var editClass = canEdit ? 'editable' : '';
-    var canDrag = canEdit && !sortCol && !sv && !fa && !showMine;
+    var canDrag = canEdit && !sortCol && !sv && !showMine;
     var todayDate = new Date(); todayDate.setHours(0,0,0,0);
 
     var h = '';
@@ -85,17 +83,16 @@ function renderGrid() {
         if (selectedRows[row._idx]) trClass.push('selected');
         if (p >= 100) trClass.push('completed');
         // Delayed: plan_end passed & not 100%
-        var delayStyle = '';
         if (p < 100 && row.plan_end) {
             var pe = new Date(row.plan_end + 'T00:00:00');
             if (!isNaN(pe) && pe < todayDate) {
-                trClass.push('delayed');
-                var intensity = Math.round((100 - p) / 10) / 10; // 0%→1.0, 90%→0.1
-                delayStyle = ' style="--delay:' + intensity + '"';
+                if (p <= 30)      trClass.push('delayed-severe');   // 심각: 빨간색
+                else if (p <= 60) trClass.push('delayed-caution');  // 요주의: 오랜지
+                else              trClass.push('delayed-warning');  // 확인요망: 노란색
             }
         }
         var trClassAttr = trClass.length ? ' class="' + trClass.join(' ') + '"' : '';
-        h += '<tr data-idx="' + row._idx + '"' + trClassAttr + delayStyle + (canEdit ? ' oncontextmenu="showContext(event,' + row._idx + ')"' : '') + '>';
+        h += '<tr data-idx="' + row._idx + '"' + trClassAttr + (canEdit ? ' oncontextmenu="showContext(event,' + row._idx + ')"' : '') + '>';
         h += '<td class="row-num"' + (canDrag ? ' draggable="true"' : '') + ' onclick="handleRowSelect(event,' + row._idx + ')">' + (row._idx + 1) + '</td>';
         h += '<td class="' + editClass + '"' + ceAttr + ' data-col="category">' + esc(row.category) + '</td>';
         h += '<td class="' + editClass + '"' + ceAttr + ' data-col="task_name">' + esc(row.task_name) + '</td>';
@@ -114,7 +111,6 @@ function renderGrid() {
     tbody.innerHTML = h;
     updateStats(filtered);
     updateAlerts();
-    updateAssigneeFilter();
     updateSelectionUI();
     document.getElementById('footerRows').textContent = data.length;
 }
@@ -153,9 +149,11 @@ function updateStats(f) {
 function updateAlerts() {
     var today = new Date();
     var delayed = [];
+    var onlyMine = (USER_ROLE !== 'admin'); // admin 외에는 본인 담당 태스크만 표시
     for (var i = 0; i < data.length; i++) {
         var r = data[i];
         if ((parseFloat(r.progress) || 0) >= 100 || !r.plan_end) continue;
+        if (onlyMine && r.assignee !== USER_NAME) continue;
         var ed;
         // YYYY-MM-DD format
         if (r.plan_end.indexOf('-') >= 0) {
@@ -180,10 +178,12 @@ function updateAlerts() {
     }
     var sec = document.getElementById('alertSection');
     var con = document.getElementById('alertItems');
+    var mailBtn = document.getElementById('alertMailBtn');
     document.getElementById('alertCount').textContent = delayed.length;
     if (!delayed.length) {
         sec.className = 'alert-section no-alerts';
         con.innerHTML = '<span class="alert-empty">지연된 업무가 없습니다 ✓</span>';
+        if (mailBtn) mailBtn.style.display = 'none';
     } else {
         sec.className = 'alert-section';
         var ch = '';
@@ -191,21 +191,36 @@ function updateAlerts() {
             ch += '<span class="alert-chip"><span class="chip-task">' + esc(delayed[i].label) + '</span><span class="chip-days">+' + delayed[i].days + '일</span></span>';
         }
         con.innerHTML = ch;
+        if (mailBtn) mailBtn.style.display = (USER_ROLE === 'admin') ? '' : 'none';
     }
 }
 
-// ===== Assignee Filter =====
-function updateAssigneeFilter() {
-    var sel = document.getElementById('filterAssignee');
-    var cur = sel.value;
-    var m = {};
-    for (var i = 0; i < data.length; i++) { if (data[i].assignee) m[data[i].assignee] = true; }
-    var a = Object.keys(m).sort();
-    sel.innerHTML = '<option value="">전체 담당자</option>';
-    for (var i = 0; i < a.length; i++) {
-        sel.innerHTML += '<option value="' + a[i] + '"' + (a[i] === cur ? ' selected' : '') + '>' + a[i] + '</option>';
+// ===== Delay Mail =====
+async function sendDelayMail() {
+    if (USER_ROLE !== 'admin') { showToast('메일 전송 권한이 없습니다.', 'error'); return; }
+    var btn = document.getElementById('alertMailBtn');
+    if (!btn) return;
+    var confirmed = window.confirm('지연된 태스크를 각 담당자에게 메일로 전송할까요?');
+    if (!confirmed) return;
+    btn.disabled = true;
+    btn.textContent = '전송 중...';
+    try {
+        var result = await API.post('/api/wbs/' + PROJECT_ID + '/send-delay-mail', {});
+        var lines = [];
+        for (var i = 0; i < (result.results || []).length; i++) {
+            var r = result.results[i];
+            lines.push((r.success ? '✓' : '✗') + ' ' + r.assignee + (r.email ? ' (' + r.email + ')' : '') + ' — ' + r.message);
+        }
+        var summary = '발송 완료: ' + result.sent + '/' + result.total + '명\n\n' + lines.join('\n');
+        alert(summary);
+    } catch (e) {
+        showToast('메일 전송 중 오류가 발생했습니다.', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📧 메일 전송';
     }
 }
+
 
 // ===== Row Selection =====
 function handleRowSelect(e, idx) {
@@ -397,6 +412,7 @@ document.addEventListener('keydown', function(e) {
 
 // ===== Paste in cell =====
 document.addEventListener('paste', function(e) {
+    if (USER_ROLE === 'viewer') return;
     var a = document.activeElement;
     if (a && a.classList.contains('editable')) {
         var t = (e.clipboardData || window.clipboardData).getData('text');
@@ -566,8 +582,6 @@ function showContext(e, idx) {
     if (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'viewer') return;
     contextRowIdx = idx;
     var m = document.getElementById('contextMenu');
-    m.style.left = e.clientX + 'px';
-    m.style.top = e.clientY + 'px';
     // Show/hide multi-delete option
     var multiItem = document.getElementById('ctxDeleteSelected');
     var singleItem = document.getElementById('ctxDeleteSingle');
@@ -582,7 +596,18 @@ function showContext(e, idx) {
             singleItem.style.display = '';
         }
     }
+    // 측정을 위해 일단 보이되 화면 밖에 배치
+    m.style.left = '-9999px';
+    m.style.top = '0px';
     m.classList.add('show');
+    var rect = m.getBoundingClientRect();
+    var vw = window.innerWidth, vh = window.innerHeight, pad = 4;
+    var left = e.clientX;
+    var top = e.clientY;
+    if (left + rect.width + pad > vw) left = Math.max(pad, vw - rect.width - pad);
+    if (top + rect.height + pad > vh) top = Math.max(pad, vh - rect.height - pad);
+    m.style.left = left + 'px';
+    m.style.top = top + 'px';
 }
 document.addEventListener('click', function() { document.getElementById('contextMenu').classList.remove('show'); });
 
@@ -899,7 +924,9 @@ function exportExcel() {
 
 // ===== AI Assistant =====
 function sendAiQuery() {
+    if (USER_ROLE !== 'admin') { showToast('AI Assistant는 관리자 전용입니다.', 'error'); return; }
     var input = document.getElementById('aiInput');
+    if (!input) return;
     var query = input.value.trim();
     if (!query) return;
 
@@ -999,3 +1026,308 @@ function closeAiResult() {
 
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', loadItems);
+
+// ===== Stats Modal =====
+var STATS_COLORS = ['#4f6ef7','#7c5ef7','#18a058','#f07c3e','#e6a817','#e84040','#0ea882','#0ea5e9','#8b5cf6','#ec4899','#14b8a6','#f97316'];
+
+function openStatsModal() {
+    document.getElementById('statsModal').classList.add('show');
+    document.getElementById('statsModalBody').innerHTML = '<div class="stats-loading">통계 데이터를 불러오는 중...</div>';
+    API.get('/api/wbs/' + PROJECT_ID + '/weekly-stats?weeks=4')
+        .then(renderStatsModal)
+        .catch(function() {
+            document.getElementById('statsModalBody').innerHTML = '<div class="stats-error">통계 데이터를 불러올 수 없습니다.</div>';
+        });
+}
+
+function closeStatsModal() {
+    _destroyStatsCharts();
+    document.getElementById('statsModal').classList.remove('show');
+}
+
+function _statsDelta(v, unit) {
+    if (v === null || v === undefined) return '';
+    unit = unit || '';
+    var sign = v > 0 ? '+' : '';
+    var cls = v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero';
+    return '<span class="stats-delta ' + cls + '">(' + sign + v + unit + ')</span>';
+}
+
+function _smDelta(v, unit) {
+    if (v === null || v === undefined) return '';
+    unit = unit || '';
+    var sign = v > 0 ? '+' : '';
+    var cls = v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero';
+    return '<span class="stats-sm-delta ' + cls + '">' + sign + v + unit + '</span>';
+}
+
+function _rateColor(rate) {
+    if (rate >= 80) return '#18a058';
+    if (rate >= 50) return '#4f6ef7';
+    if (rate >= 20) return '#f07c3e';
+    return '#e84040';
+}
+
+function renderStatsModal(data) {
+    var ov = data.overview;
+    var weekly = data.weekly || [];
+    var assignees = data.assignees || [];
+
+    var h = '';
+
+    // ── 현재 진척률 KPI ──
+    h += '<div class="stats-sect">현재 진척률';
+    if (ov.report_week) h += ' <span style="font-size:10px;font-weight:400;color:#4f6ef7;margin-left:4px;">전주(' + ov.report_week + ' ' + ov.report_date_range + ') 대비</span>';
+    h += '</div>';
+    h += '<div class="stats-kpi-row">';
+    h += _statsKpi('전체 태스크', ov.total, _statsDelta(ov.delta_total), 'tasks');
+    h += _statsKpi('완료 태스크', ov.completed, _statsDelta(ov.delta_completed), 'tasks');
+    h += _statsKpi('전체 공수', ov.total_effort + 'd', _statsDelta(ov.delta_total_effort, 'd'), '');
+    h += _statsKpi('완료 공수', ov.completed_effort + 'd', _statsDelta(ov.delta_completed_effort, 'd'), '');
+    h += _statsKpi('전체 진척률', ov.progress_rate + '%', '', '');
+    // 주간 진척률(현재) = 진행중 주차(weekly[0])의 주간 달성률
+    var curWeekRate = weekly.length > 0 ? weekly[0].progress_rate : 0;
+    var curWeekColor = _rateColor(curWeekRate);
+    h += _statsKpi('주간 진척률(현재)', '<span style="color:' + curWeekColor + '">' + curWeekRate + '%</span>', '', '');
+    h += '</div>';
+
+    // ── 주차별 진척 현황 (CSS Grid) ──
+    h += '<div class="stats-sect" style="margin-top:18px">주차별 진척 현황</div>';
+    h += '<div class="stats-grid-wrap">';
+    h += '<div class="stats-grid-hdr"><span>주차</span><span>전체</span><span>신규</span><span>주간완료</span><span>누적완료</span><span>진척률</span><span>주간 진척률</span><span>전체공수</span><span>완료공수</span></div>';
+
+    weekly.forEach(function(w, i) {
+        var isCur = (i === 0);
+        var rateColor = _rateColor(w.progress_rate);
+        h += '<div class="stats-grid-row' + (isCur ? ' cur' : '') + '">';
+
+        // 주차
+        h += '<span><span class="stats-wk-lbl' + (isCur ? ' cur' : '') + '">' + w.week_label + '</span><br><span class="stats-wk-sub">' + w.date_range + '</span></span>';
+        // 전체
+        h += '<span style="color:#1a1d23;font-weight:600">' + w.total_tasks + '</span>';
+        // 신규
+        h += '<span style="color:#4f6ef7">' + w.new_tasks + '</span>';
+        // 주간완료 (완료 / 예정)
+        h += '<span style="color:#18a058;font-weight:600">' + w.completed_week + ' / <span style="color:#8b92a5">' + w.planned_week + '</span></span>';
+        // 누적완료 (관측 구간 내 주간완료의 누적 합)
+        h += '<span>' + w.cumulative_completed_week + '</span>';
+        // 진척률 (누적완료 / 전체)
+        if (w.total_tasks > 0) {
+            var cumRate = Math.round(w.cumulative_completed_week / w.total_tasks * 100);
+            var cumColor = _rateColor(cumRate);
+            h += '<span><span class="stats-rate-inline"><span class="stats-rate-inline-fill" style="width:' + cumRate + '%;background:' + cumColor + '"></span></span>'
+                + '<span style="color:' + cumColor + ';font-weight:600">' + cumRate + '%</span></span>';
+        } else {
+            h += '<span style="color:#c8cdd8">-</span>';
+        }
+        // 주간 진척률
+        h += '<span><span class="stats-rate-inline"><span class="stats-rate-inline-fill" style="width:' + w.progress_rate + '%;background:' + rateColor + '"></span></span>'
+            + '<span style="color:' + rateColor + ';font-weight:600">' + w.progress_rate + '%</span> ' + _smDelta(w.delta_rate, '%') + '</span>';
+        // 전체공수
+        h += '<span>' + w.total_effort + 'd <span style="font-size:8px;color:#7c5ef7">+' + w.new_effort + 'd</span></span>';
+        // 완료공수
+        h += '<span style="color:#f07c3e">' + w.completed_week_effort + 'd</span>';
+
+        h += '</div>';
+    });
+
+    h += '</div>';
+
+    // ── 담당자별 현황 (3-card grid) ──
+    if (assignees.length > 0) {
+        h += '<div class="stats-sect" style="margin-top:18px">담당자별 현황</div>';
+        h += '<div class="stats-s1-grid">';
+
+        var maxTasks = Math.max.apply(null, assignees.map(function(a) { return a.tasks; }));
+        var maxEffort = Math.max.apply(null, assignees.map(function(a) { return parseFloat(a.effort); }));
+
+        // Card 1: 담당자별 태스크 수 (완료/전체)
+        h += '<div class="stats-card"><div class="stats-card-title"><span class="dot" style="background:#4f6ef7"></span>담당자별 태스크 수</div><div class="stats-bar-list">';
+        assignees.forEach(function(a, i) {
+            var done = a.completed || 0;
+            var totalPct = maxTasks > 0 ? Math.round(a.tasks / maxTasks * 100) : 0;
+            var donePct  = maxTasks > 0 ? Math.round(done    / maxTasks * 100) : 0;
+            var ratio = a.tasks > 0 ? Math.round(done / a.tasks * 100) : 0;
+            var color = STATS_COLORS[i % STATS_COLORS.length];
+            h += '<div><div class="stats-bar-meta"><span class="stats-bar-name">' + esc(a.assignee) + '</span><span class="stats-bar-val">' + done + '/' + a.tasks + ' · ' + ratio + '%</span></div>'
+                + '<div class="stats-bar-track">'
+                + '<div class="stats-bar-total" style="width:' + totalPct + '%;background:' + color + '"></div>'
+                + '<div class="stats-bar-fill"  style="width:' + donePct  + '%;background:' + color + '"></div>'
+                + '</div></div>';
+        });
+        h += '</div></div>';
+
+        // Card 2: 담당자별 공수 합(d) — 완료/전체
+        h += '<div class="stats-card"><div class="stats-card-title"><span class="dot" style="background:#7c5ef7"></span>담당자별 공수 합 (d)</div><div class="stats-bar-list">';
+        assignees.forEach(function(a, i) {
+            var eff = parseFloat(a.effort) || 0;
+            var doneEff = parseFloat(a.completed_effort) || 0;
+            var totalPct = maxEffort > 0 ? Math.round(eff     / maxEffort * 100) : 0;
+            var donePct  = maxEffort > 0 ? Math.round(doneEff / maxEffort * 100) : 0;
+            var ratio = eff > 0 ? Math.round(doneEff / eff * 100) : 0;
+            var color = STATS_COLORS[i % STATS_COLORS.length];
+            h += '<div><div class="stats-bar-meta"><span class="stats-bar-name">' + esc(a.assignee) + '</span><span class="stats-bar-val">' + doneEff.toFixed(1) + '/' + eff.toFixed(1) + 'd · ' + ratio + '%</span></div>'
+                + '<div class="stats-bar-track">'
+                + '<div class="stats-bar-total" style="width:' + totalPct + '%;background:' + color + '"></div>'
+                + '<div class="stats-bar-fill"  style="width:' + donePct  + '%;background:' + color + '"></div>'
+                + '</div></div>';
+        });
+        h += '</div></div>';
+
+        // Card 3: 태스크 / 공수 비중 (donut)
+        var totalT = assignees.reduce(function(s, a) { return s + a.tasks; }, 0);
+        h += '<div class="stats-card"><div class="stats-card-title"><span class="dot" style="background:#f07c3e"></span>태스크 / 공수 비중</div>';
+        h += '<div class="stats-donut-wrap"><canvas id="statsDonutChart" style="max-width:150px;max-height:150px;"></canvas>';
+        h += '<div class="stats-donut-center"><div class="big">' + totalT + '</div><div class="small">총 태스크</div></div></div>';
+        h += '<div class="stats-legend">';
+        assignees.forEach(function(a, i) {
+            var eff = parseFloat(a.effort);
+            h += '<div class="stats-legend-item"><span class="stats-legend-dot" style="background:' + STATS_COLORS[i % STATS_COLORS.length] + '"></span>'
+                + '<span class="stats-legend-name">' + esc(a.assignee) + '</span>'
+                + '<span class="stats-legend-val" style="color:' + STATS_COLORS[i % STATS_COLORS.length] + '">' + a.tasks + '개 · ' + eff.toFixed(1) + 'd</span></div>';
+        });
+        h += '</div></div>';
+
+        h += '</div>';
+    }
+
+    // ── 주간 진척률 추이 (line chart) ──
+    if (weekly.length > 0) {
+        h += '<div class="stats-card stats-trend-card"><div class="stats-card-title"><span class="dot" style="background:#18a058"></span>주간 진척률 추이</div>';
+        h += '<div class="stats-chart-area"><canvas id="statsTrendChart"></canvas></div></div>';
+    }
+
+    document.getElementById('statsModalBody').innerHTML = h;
+
+    // ── Chart.js 렌더링 (DOM 삽입 후) ──
+    _destroyStatsCharts();
+
+    // Donut chart
+    if (assignees.length > 0 && document.getElementById('statsDonutChart')) {
+        _statsDonutChart = new Chart(document.getElementById('statsDonutChart'), {
+            type: 'doughnut',
+            data: {
+                labels: assignees.map(function(a) { return a.assignee; }),
+                datasets: [{
+                    data: assignees.map(function(a) { return a.tasks; }),
+                    backgroundColor: STATS_COLORS.slice(0, assignees.length),
+                    borderColor: '#ffffff',
+                    borderWidth: 3,
+                    hoverOffset: 6
+                }]
+            },
+            options: {
+                cutout: '66%',
+                plugins: { legend: { display: false }, tooltip: { callbacks: {
+                    label: function(ctx) {
+                        var total = ctx.dataset.data.reduce(function(s, v) { return s + v; }, 0);
+                        return ' ' + ctx.label + ': ' + ctx.parsed + '개 (' + (ctx.parsed / total * 100).toFixed(1) + '%)';
+                    }
+                }}},
+                animation: { duration: 700 }
+            }
+        });
+    }
+
+    // Trend line chart
+    if (weekly.length > 0 && document.getElementById('statsTrendChart')) {
+        var trendWeeks = weekly.slice().reverse();
+        var trendLabels = trendWeeks.map(function(w) { return w.week_label.replace(/ \(진행중\)/, ''); });
+        var trendRates = trendWeeks.map(function(w) { return w.progress_rate; });
+        var trendDoneEff = trendWeeks.map(function(w) { return w.completed_week_effort; });
+        var trendTotalEff = trendWeeks.map(function(w) { return w.total_effort; });
+
+        _statsTrendChart = new Chart(document.getElementById('statsTrendChart'), {
+            type: 'line',
+            data: {
+                labels: trendLabels,
+                datasets: [
+                    {
+                        label: '진척률 (%)',
+                        data: trendRates,
+                        yAxisID: 'yRate',
+                        borderColor: '#4f6ef7',
+                        backgroundColor: 'rgba(79,110,247,0.07)',
+                        borderWidth: 2.5,
+                        pointBackgroundColor: '#4f6ef7',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: '완료 공수 (d)',
+                        data: trendDoneEff,
+                        yAxisID: 'yEff',
+                        borderColor: '#18a058',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointBackgroundColor: '#18a058',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointRadius: 3,
+                        fill: false,
+                        tension: 0.4,
+                        borderDash: [6, 3]
+                    },
+                    {
+                        label: '전체 공수 (d)',
+                        data: trendTotalEff,
+                        yAxisID: 'yEff',
+                        borderColor: '#c8ccd8',
+                        backgroundColor: 'transparent',
+                        borderWidth: 1.5,
+                        pointBackgroundColor: '#c8ccd8',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointRadius: 3,
+                        fill: false,
+                        tension: 0.4,
+                        borderDash: [3, 3]
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#8b92a5', font: { size: 10 }, boxWidth: 10, padding: 14 } },
+                    tooltip: {
+                        backgroundColor: '#fff', borderColor: '#e4e7ed', borderWidth: 1,
+                        titleColor: '#1a1d23', bodyColor: '#8b92a5'
+                    }
+                },
+                scales: {
+                    x: { ticks: { color: '#8b92a5', font: { size: 10 } }, grid: { color: '#f0f2f5' } },
+                    yRate: {
+                        position: 'left', min: 0, max: 110,
+                        ticks: { color: '#4f6ef7', font: { size: 10 }, callback: function(v) { return v + '%'; } },
+                        grid: { color: '#f0f2f5' }
+                    },
+                    yEff: {
+                        position: 'right', min: 0,
+                        ticks: { color: '#18a058', font: { size: 10 }, callback: function(v) { return v + 'd'; } },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+}
+
+var _statsDonutChart = null;
+var _statsTrendChart = null;
+function _destroyStatsCharts() {
+    if (_statsDonutChart) { _statsDonutChart.destroy(); _statsDonutChart = null; }
+    if (_statsTrendChart) { _statsTrendChart.destroy(); _statsTrendChart = null; }
+}
+
+function _statsKpi(label, value, deltaHtml, unit) {
+    return '<div class="stats-kpi">'
+        + '<div class="stats-kpi-lbl">' + label + '</div>'
+        + '<div class="stats-kpi-val">' + value + '</div>'
+        + '<div class="stats-kpi-delta-row">' + (deltaHtml || '') + '</div>'
+        + '</div>';
+}

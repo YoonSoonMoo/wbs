@@ -81,7 +81,7 @@ def create_item(data):
     return cursor.lastrowid
 
 
-def update_item(item_id, data):
+def update_item(item_id, data, updated_by=None):
     db = get_db()
     fields = []
     values = []
@@ -89,6 +89,9 @@ def update_item(item_id, data):
         if key in data:
             fields.append(f"{key} = ?")
             values.append(_trim(data[key]))
+    if updated_by is not None:
+        fields.append("updated_by = ?")
+        values.append(updated_by)
     if not fields:
         return False
     values.append(item_id)

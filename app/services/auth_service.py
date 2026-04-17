@@ -20,26 +20,66 @@ def register_user(name, email, password, role='viewer'):
 def login_user(email, password):
     db = get_db()
     user = db.execute("SELECT * FROM user WHERE email = ?", (email,)).fetchone()
-    if user and check_password_hash(user['password_hash'], password):
-        return dict(user)
-    return None
+    if not user or not check_password_hash(user['password_hash'], password):
+        return None
+    if not user['is_active']:
+        return {'_inactive': True}
+    return dict(user)
 
 
 def get_user(user_id):
     db = get_db()
     row = db.execute(
-        "SELECT id, name, email, role FROM user WHERE id = ?", (user_id,)
+        "SELECT id, name, email, role, is_active FROM user WHERE id = ?", (user_id,)
     ).fetchone()
     return dict(row) if row else None
 
 
 def get_all_users():
     db = get_db()
-    rows = db.execute("SELECT id, name, email, role FROM user ORDER BY name").fetchall()
+    rows = db.execute(
+        "SELECT id, name, email, role, is_active, created_at FROM user ORDER BY id"
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
+VALID_ROLES = ('admin', 'developer', 'viewer')
+
+
+def update_user_role(user_id, new_role):
+    if new_role not in VALID_ROLES:
+        raise ValueError(f"잘못된 역할: {new_role}")
+    db = get_db()
+    db.execute("UPDATE user SET role = ? WHERE id = ?", (new_role, user_id))
+    db.commit()
+
+
+def reset_user_password(user_id, new_password):
+    if not new_password or len(new_password) < 4:
+        raise ValueError("비밀번호는 4자 이상이어야 합니다.")
+    db = get_db()
+    db.execute(
+        "UPDATE user SET password_hash = ? WHERE id = ?",
+        (generate_password_hash(new_password), user_id),
+    )
+    db.commit()
+
+
+def set_user_active(user_id, is_active):
+    db = get_db()
+    db.execute("UPDATE user SET is_active = ? WHERE id = ?", (1 if is_active else 0, user_id))
+    db.commit()
+
+
+_ROLE_LEVEL = {'viewer': 0, 'developer': 1, 'admin': 2}
+
+
 def get_project_role(user_id, project_id):
+    """프로젝트 내 유효 권한을 반환한다.
+
+    전역 역할(user.role)이 상한으로 작용한다. 즉 전역이 viewer면
+    project_member.role='developer'이어도 viewer로 clamp된다.
+    """
     user = get_user(user_id)
     if not user:
         return None
@@ -50,7 +90,11 @@ def get_project_role(user_id, project_id):
         "SELECT role FROM project_member WHERE project_id = ? AND user_id = ?",
         (project_id, user_id),
     ).fetchone()
-    return row['role'] if row else None
+    if not row:
+        return None
+    global_lv = _ROLE_LEVEL.get(user['role'], 0)
+    project_lv = _ROLE_LEVEL.get(row['role'], 0)
+    return user['role'] if global_lv < project_lv else row['role']
 
 
 def get_project_members(project_id):

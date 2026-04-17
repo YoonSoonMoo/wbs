@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WBS 통계 대시보드</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:       #f5f6f8;
+    --surface:  #ffffff;
+    --surface2: #f0f2f5;
+    --border:   #e4e7ed;
+    --text:     #1a1d23;
+    --muted:    #8b92a5;
+    --accent:   #4f6ef7;
+    --green:    #18a058;
+    --yellow:   #e6a817;
+    --orange:   #f07c3e;
+    --purple:   #7c5ef7;
+    --red:      #e84040;
+    --teal:     #0ea882;
+
+    --c1: #4f6ef7;
+    --c2: #7c5ef7;
+    --c3: #18a058;
+    --c4: #f07c3e;
+    --c5: #e6a817;
+    --c6: #e84040;
+    --c7: #0ea882;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans KR', sans-serif;
+    min-height: 100vh;
+    padding: 36px 28px 60px;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .header-left { display: flex; flex-direction: column; gap: 4px; }
+  .header-eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .header-title {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+    color: var(--text);
+  }
+  .header-sub {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+  }
+  .header-badge {
+    background: #eef1fe;
+    border: 1px solid #c7d0fc;
+    color: var(--accent);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .5px;
+  }
+
+  /* ── Section label ── */
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-label::before {
+    content: '';
+    display: inline-block;
+    width: 3px; height: 13px;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+  }
+
+  /* ── Section 1 grid ── */
+  .s1-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 18px;
+    margin-bottom: 48px;
+  }
+  @media(max-width:900px){ .s1-grid { grid-template-columns: 1fr; } }
+
+  /* bar list */
+  .bar-list { display: flex; flex-direction: column; gap: 14px; }
+  .bar-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .bar-name { font-size: 13px; font-weight: 500; color: var(--text); }
+  .bar-val {
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+  }
+  .bar-track {
+    position: relative;
+    height: 7px;
+    background: var(--surface2);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .bar-total, .bar-fill {
+    position: absolute;
+    top: 0; left: 0;
+    height: 100%;
+    border-radius: 99px;
+    transition: width 1s cubic-bezier(.4,0,.2,1);
+  }
+  .bar-total { opacity: .22; }
+
+  /* donut */
+  .donut-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .donut-center {
+    position: absolute;
+    text-align: center;
+    pointer-events: none;
+  }
+  .donut-center .big {
+    font-size: 24px;
+    font-weight: 700;
+    font-family: 'DM Mono', monospace;
+    color: var(--text);
+  }
+  .donut-center .small { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .legend { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+  .legend-name { color: var(--muted); font-size: 12px; }
+  .legend-val { margin-left: auto; font-family: 'DM Mono', monospace; font-size: 11px; }
+
+  /* ── KPI row ── */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+  @media(max-width:700px){ .kpi-row { grid-template-columns: repeat(2,1fr); } }
+
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 16px 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 12px 12px 0 0;
+  }
+  .kpi:nth-child(1)::before { background: var(--text); }
+  .kpi:nth-child(2)::before { background: var(--green); }
+  .kpi:nth-child(3)::before { background: var(--accent); }
+  .kpi:nth-child(4)::before { background: var(--purple); }
+  .kpi:nth-child(5)::before { background: var(--orange); }
+
+  .kpi-label { font-size: 11px; color: var(--muted); margin-bottom: 8px; font-weight: 500; }
+  .kpi-value { font-size: 28px; font-weight: 700; font-family: 'DM Mono', monospace; line-height: 1; }
+  .kpi-unit  { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* ── Table ── */
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    background: var(--surface2);
+    padding: 11px 14px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: .5px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  thead th:first-child { text-align: left; }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .12s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: #fafbff; }
+  tbody td {
+    padding: 13px 14px;
+    text-align: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  tbody td:first-child {
+    text-align: left;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-weight: 500;
+  }
+  .badge-done { background: #e8f7ef; color: var(--green); }
+  .badge-ing  { background: #eef1fe; color: var(--accent); }
+  .badge-plan { background: var(--surface2); color: var(--muted); }
+
+  .chart-area { height: 240px; position: relative; }
+  .trend-card { margin-top: 18px; }
+
+  /* current week row */
+  .current-row { background: #fafbff !important; }
+  .current-week-text { color: var(--accent) !important; }
+
+  .footer {
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 40px;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0 0 28px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <div class="header-eyebrow">WBS Dashboard</div>
+    <div class="header-title">개발 진척 통계</div>
+    <div class="header-sub">기준일: 2025-04-16 &nbsp;·&nbsp; 스프린트 #8</div>
+  </div>
+  <div class="header-badge">Sprint #8 진행중</div>
+</div>
+
+<!-- ═══════════ S1 담당자별 ═══════════ -->
+<div class="section-label">담당자별 현황</div>
+<div class="s1-grid">
+
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:var(--accent)"></span>담당자별 태스크 수</div>
+    <div class="bar-list" id="taskBars"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:var(--purple)"></span>담당자별 공수 합 (h)</div>
+    <div class="bar-list" id="effortBars"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:var(--orange)"></span>태스크 / 공수 비중</div>
+    <div class="donut-wrap" style="height:180px;">
+      <canvas id="donutChart" style="max-width:180px;max-height:180px;"></canvas>
+      <div class="donut-center">
+        <div class="big" id="donutTotal">—</div>
+        <div class="small">총 태스크</div>
+      </div>
+    </div>
+    <div class="legend" id="donutLegend"></div>
+  </div>
+
+</div>
+
+<!-- ═══════════ S2 주간 진척 ═══════════ -->
+<div class="section-label">주간 개발 진척률</div>
+
+<div class="kpi-row">
+  <div class="kpi">
+    <div class="kpi-label">전체 태스크</div>
+    <div class="kpi-value" id="kpiTotal" style="color:var(--text)">—</div>
+    <div class="kpi-unit">tasks</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">완료 태스크</div>
+    <div class="kpi-value" id="kpiDone" style="color:var(--green)">—</div>
+    <div class="kpi-unit">tasks</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">진척률</div>
+    <div class="kpi-value" id="kpiRate" style="color:var(--accent)">—</div>
+    <div class="kpi-unit">%</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">전체 공수</div>
+    <div class="kpi-value" id="kpiEffort" style="color:var(--purple)">—</div>
+    <div class="kpi-unit">h</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">완료 공수</div>
+    <div class="kpi-value" id="kpiDoneEffort" style="color:var(--orange)">—</div>
+    <div class="kpi-unit">h</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>주차</th>
+          <th>전체 태스크</th>
+          <th>완료 태스크</th>
+          <th>진행중</th>
+          <th>예정</th>
+          <th>진척률</th>
+          <th>전체 공수 (h)</th>
+          <th>완료 공수 (h)</th>
+          <th>상태</th>
+        </tr>
+      </thead>
+      <tbody id="weeklyTbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card trend-card">
+  <div class="card-title"><span class="dot" style="background:var(--green)"></span>주간 진척률 추이</div>
+  <div class="chart-area">
+    <canvas id="trendChart"></canvas>
+  </div>
+</div>
+
+<div class="footer">WBS Statistics Dashboard · Generated 2025-04-16</div>
+
+<script>
+/* ── Mock Data ── */
+const assignees = [
+  { name: '김민준', tasks: 18, done: 15, effort: 76, doneEff: 62 },
+  { name: '이서연', tasks: 14, done: 10, effort: 58, doneEff: 38 },
+  { name: '박지호', tasks: 12, done:  7, effort: 52, doneEff: 28 },
+  { name: '최수아', tasks: 10, done:  8, effort: 44, doneEff: 36 },
+  { name: '정현우', tasks:  8, done:  3, effort: 34, doneEff: 12 },
+  { name: '한다은', tasks:  6, done:  5, effort: 24, doneEff: 20 },
+];
+
+const weeklyData = [
+  { week: '1주차 (3/18~3/22)', total:18, done:18, wip:0,  plan:0,  totalEff:72, doneEff:72 },
+  { week: '2주차 (3/25~3/29)', total:20, done:19, wip:1,  plan:0,  totalEff:80, doneEff:76 },
+  { week: '3주차 (4/01~4/05)', total:22, done:18, wip:2,  plan:2,  totalEff:88, doneEff:72 },
+  { week: '4주차 (4/08~4/12)', total:24, done:16, wip:4,  plan:4,  totalEff:96, doneEff:64 },
+  { week: '5주차 (4/15~4/19)', total:22, done:10, wip:6,  plan:6,  totalEff:88, doneEff:40 },
+  { week: '6주차 (4/22~4/26)', total:20, done:0,  wip:0,  plan:20, totalEff:80, doneEff:0  },
+];
+
+const COLORS = ['#4f6ef7','#7c5ef7','#18a058','#f07c3e','#e6a817','#e84040','#0ea882'];
+
+/* ── Section 1 바 ── */
+const maxTask   = Math.max(...assignees.map(a=>a.tasks));
+const maxEffort = Math.max(...assignees.map(a=>a.effort));
+
+function buildBars(id, getTotal, getDone, maxVal, unit) {
+  const el = document.getElementById(id);
+  assignees.forEach((a, i) => {
+    const total = getTotal(a);
+    const done = getDone(a);
+    const totalPct = (total / maxVal * 100).toFixed(1);
+    const donePct  = (done  / maxVal * 100).toFixed(1);
+    const ratioPct = total > 0 ? Math.round(done / total * 100) : 0;
+    el.innerHTML += `
+      <div>
+        <div class="bar-meta">
+          <span class="bar-name">${a.name}</span>
+          <span class="bar-val">${done}/${total}${unit} · ${ratioPct}%</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-total" data-pct="${totalPct}" style="width:0%;background:${COLORS[i]}"></div>
+          <div class="bar-fill"  data-pct="${donePct}"  style="width:0%;background:${COLORS[i]}"></div>
+        </div>
+      </div>`;
+  });
+  requestAnimationFrame(() =>
+    el.querySelectorAll('.bar-total, .bar-fill').forEach(f => f.style.width = f.dataset.pct + '%')
+  );
+}
+buildBars('taskBars',   a=>a.tasks,  a=>a.done,    maxTask,   '');
+buildBars('effortBars', a=>a.effort, a=>a.doneEff, maxEffort, 'h');
+
+/* ── Donut ── */
+const totalTasks = assignees.reduce((s,a)=>s+a.tasks,0);
+document.getElementById('donutTotal').textContent = totalTasks;
+
+new Chart(document.getElementById('donutChart'), {
+  type: 'doughnut',
+  data: {
+    labels: assignees.map(a=>a.name),
+    datasets: [{
+      data: assignees.map(a=>a.tasks),
+      backgroundColor: COLORS,
+      borderColor: '#ffffff',
+      borderWidth: 3,
+      hoverOffset: 6,
+    }]
+  },
+  options: {
+    cutout: '68%',
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}개 (${(ctx.parsed/totalTasks*100).toFixed(1)}%)` } }
+    },
+    animation: { duration: 900 }
+  }
+});
+
+const legendEl = document.getElementById('donutLegend');
+assignees.forEach((a,i) => {
+  legendEl.innerHTML += `
+    <div class="legend-item">
+      <span class="legend-dot" style="background:${COLORS[i]}"></span>
+      <span class="legend-name">${a.name}</span>
+      <span class="legend-val" style="color:${COLORS[i]}">${a.tasks}개 · ${a.effort}h</span>
+    </div>`;
+});
+
+/* ── KPI ── */
+const totalAll    = weeklyData.reduce((s,w)=>s+w.total,0);
+const doneAll     = weeklyData.reduce((s,w)=>s+w.done,0);
+const rateAll     = (doneAll/totalAll*100).toFixed(1);
+const effAll      = weeklyData.reduce((s,w)=>s+w.totalEff,0);
+const doneEffAll  = weeklyData.reduce((s,w)=>s+w.doneEff,0);
+
+document.getElementById('kpiTotal').textContent      = totalAll;
+document.getElementById('kpiDone').textContent       = doneAll;
+document.getElementById('kpiRate').textContent       = rateAll;
+document.getElementById('kpiEffort').textContent     = effAll;
+document.getElementById('kpiDoneEffort').textContent = doneEffAll;
+
+/* ── Weekly Table ── */
+const tbody = document.getElementById('weeklyTbody');
+weeklyData.forEach((w, i) => {
+  const rate = w.total > 0 ? (w.done/w.total*100) : 0;
+  const isCur = i === 4;
+  let badgeClass = 'badge-plan', badgeText = '예정';
+  if (rate === 100)     { badgeClass = 'badge-done'; badgeText = '완료'; }
+  else if (rate > 0)    { badgeClass = 'badge-ing';  badgeText = '진행중'; }
+  const fillColor = rate >= 80 ? '#18a058' : rate >= 40 ? '#4f6ef7' : '#f07c3e';
+
+  tbody.innerHTML += `
+    <tr class="${isCur ? 'current-row' : ''}">
+      <td class="${isCur ? 'current-week-text' : ''}">${w.week}${isCur ? ' ●' : ''}</td>
+      <td>${w.total}</td>
+      <td style="color:#18a058">${w.done}</td>
+      <td style="color:#4f6ef7">${w.wip}</td>
+      <td style="color:#8b92a5">${w.plan}</td>
+      <td style="color:${fillColor};font-weight:600">${rate.toFixed(0)}%</td>
+      <td>${w.totalEff}</td>
+      <td style="color:#f07c3e">${w.doneEff}</td>
+      <td><span class="badge ${badgeClass}">${badgeText}</span></td>
+    </tr>`;
+});
+
+/* ── Trend Chart ── */
+const labels          = weeklyData.map(w => w.week.split(' ')[0]);
+const rates           = weeklyData.map(w => w.total > 0 ? +(w.done/w.total*100).toFixed(1) : 0);
+const doneEffByWeek   = weeklyData.map(w => w.doneEff);
+const totalEffByWeek  = weeklyData.map(w => w.totalEff);
+
+new Chart(document.getElementById('trendChart'), {
+  type: 'line',
+  data: {
+    labels,
+    datasets: [
+      {
+        label: '진척률 (%)',
+        data: rates,
+        yAxisID: 'yRate',
+        borderColor: '#4f6ef7',
+        backgroundColor: 'rgba(79,110,247,0.07)',
+        borderWidth: 2.5,
+        pointBackgroundColor: '#4f6ef7',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointRadius: 5,
+        fill: true,
+        tension: 0.4,
+      },
+      {
+        label: '완료 공수 (h)',
+        data: doneEffByWeek,
+        yAxisID: 'yEff',
+        borderColor: '#18a058',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        pointBackgroundColor: '#18a058',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        fill: false,
+        tension: 0.4,
+        borderDash: [6,3],
+      },
+      {
+        label: '전체 공수 (h)',
+        data: totalEffByWeek,
+        yAxisID: 'yEff',
+        borderColor: '#c8ccd8',
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        pointBackgroundColor: '#c8ccd8',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        fill: false,
+        tension: 0.4,
+        borderDash: [3,3],
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        labels: { color: '#8b92a5', font: { size: 11 }, boxWidth: 12, padding: 16 }
+      },
+      tooltip: {
+        backgroundColor: '#fff',
+        borderColor: '#e4e7ed',
+        borderWidth: 1,
+        titleColor: '#1a1d23',
+        bodyColor: '#8b92a5',
+        shadowOffsetX: 0,
+        shadowOffsetY: 4,
+        shadowBlur: 12,
+        shadowColor: 'rgba(0,0,0,.08)',
+      }
+    },
+    scales: {
+      x: {
+        ticks: { color: '#8b92a5', font: { size: 11 } },
+        grid:  { color: '#f0f2f5' }
+      },
+      yRate: {
+        position: 'left',
+        min: 0, max: 110,
+        ticks: { color: '#4f6ef7', font: { size: 11 }, callback: v => v + '%' },
+        grid:  { color: '#f0f2f5' }
+      },
+      yEff: {
+        position: 'right',
+        min: 0,
+        ticks: { color: '#18a058', font: { size: 11 }, callback: v => v + 'h' },
+        grid:  { display: false }
+      }
+    }
+  }
+});
+</script>
+</body>
+</html>
