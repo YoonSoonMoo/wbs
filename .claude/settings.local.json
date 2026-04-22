@@ -4,7 +4,23 @@
       "Bash(.venv/Scripts/python -c \"from app import create_app; app = create_app\\(\\); print\\('OK'\\)\")",
       "Bash(curl -s \"https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.js\")",
       "Bash(grep -oP '.{0,30}en:\\\\[\"January.{0,200}')",
-      "Bash(pip show:*)"
+      "Bash(pip show:*)",
+      "Bash(agent-browser open:*)",
+      "Bash(agent-browser snapshot:*)",
+      "Bash(agent-browser fill:*)",
+      "Bash(agent-browser click:*)",
+      "Bash(agent-browser wait:*)",
+      "Bash(agent-browser screenshot:*)",
+      "Bash(agent-browser find:*)",
+      "Bash(agent-browser close:*)",
+      "Bash(timeout 8 python run.py)",
+      "Bash(python -c ' *)",
+      "Bash(python *)",
+      "Bash(xargs grep *)",
+      "WebFetch(domain:daou.co.kr)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:5000/)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} \\(login\\)\\\\n\" http://localhost:5000/login)",
+      "Bash(git add *)"
     ]
   }
 }

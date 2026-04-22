@@ -1,24 +1,28 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}WBS 관리 시스템{% endblock %}</title>
+    <title>{% block title %}Easy WBS | for Claude (via MCP){% endblock %}</title>
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     {% block head %}{% endblock %}
 </head>
+
 <body>
     <nav class="topbar">
         <div class="topbar-left">
-            {% block topbar_title %}<a href="/" class="logo"><img src="{{ url_for('static', filename='img/logo.png') }}" alt="Easy WBS" class="logo-img"></a>{% endblock %}
+            {% block topbar_title %}<a href="/" class="logo"><img src="{{ url_for('static', filename='img/logo.png') }}"
+                    alt="Easy WBS" class="logo-img"></a>{% endblock %}
         </div>
         <div class="topbar-center">
             {% block topbar_center %}{% endblock %}
         </div>
         <div class="topbar-right">
             {% if user_name %}
-            <span class="nav-link" style="cursor:default;">{{ user_name }}{% if user_role == 'admin' %} (관리자){% endif %}</span>
+            <span class="nav-link" style="cursor:default;">{{ user_name }}{% if user_role == 'admin' %} (관리자){% endif
+                %}</span>
             <a href="/logout" class="nav-link">로그아웃</a>
             {% endif %}
         </div>
@@ -32,5 +36,60 @@
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     {% block scripts %}{% endblock %}
+
+    {% if session.get('requires_pw_change') %}
+    <div id="pw-change-modal" class="modal" style="display:flex; z-index:9999;">
+        <div class="modal-content" style="max-width:400px; text-align:center;">
+            <div class="modal-header" style="justify-content:center; border-bottom:none; margin-bottom:10px;">
+                <h2 style="font-size:20px; color:var(--primary);">비밀번호 변경</h2>
+            </div>
+            <div style="padding: 10px 20px 20px;">
+                <p style="font-size:13px; color:var(--text-light); margin-bottom:20px; line-height:1.5;">
+                    임시 비밀번호로 로그인하셨습니다.<br>안전한 사용을 위해 새 비밀번호를 설정해주세요.
+                </p>
+                <div class="form-group" style="text-align:left;">
+                    <input type="password" id="new-pw" class="form-control" placeholder="새 비밀번호 (4자 이상)" style="padding:10px;">
+                </div>
+                <div class="form-group" style="text-align:left; margin-top:10px;">
+                    <input type="password" id="new-pw-confirm" class="form-control" placeholder="새 비밀번호 확인" style="padding:10px;">
+                </div>
+                <div class="modal-actions" style="justify-content:center; margin-top:24px;">
+                    <button class="btn btn-primary" onclick="submitPwChange()" style="width:100%; padding:10px; font-size:14px; font-weight:600;">변경 완료</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        async function submitPwChange() {
+            var pw = document.getElementById('new-pw').value;
+            var confirmPw = document.getElementById('new-pw-confirm').value;
+            if (pw !== confirmPw) {
+                showToast('비밀번호가 일치하지 않습니다.', 'error');
+                return;
+            }
+            if (pw.length < 4) {
+                showToast('비밀번호는 4자 이상이어야 합니다.', 'error');
+                return;
+            }
+            try {
+                var response = await fetch('/api/users/me/password', {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({password: pw})
+                });
+                if (response.ok) {
+                    alert('비밀번호가 변경되었습니다. 다시 로그인 해 주세요.');
+                    window.location.href = '/logout';
+                } else {
+                    var data = await response.json();
+                    showToast(data.error || '비밀번호 변경 실패', 'error');
+                }
+            } catch (e) {
+                showToast('오류가 발생했습니다.', 'error');
+            }
+        }
+    </script>
+    {% endif %}
 </body>
+
 </html>

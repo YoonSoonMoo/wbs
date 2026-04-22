@@ -62,8 +62,10 @@ function renderGrid() {
 
     if (sortCol) {
         filtered.sort(function(a, b) {
-            var va = a[sortCol] || '', vb = b[sortCol] || '';
-            if (sortCol === 'progress' || sortCol === 'effort') { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
+            var va = a[sortCol], vb = b[sortCol];
+            if (va === undefined) va = '';
+            if (vb === undefined) vb = '';
+            if (sortCol === 'progress' || sortCol === 'effort' || sortCol === '_idx') { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
             return sortDir === 'asc' ? (va < vb ? -1 : va > vb ? 1 : 0) : (va > vb ? -1 : va < vb ? 1 : 0);
         });
     }
@@ -451,18 +453,25 @@ function pasteIntoGrid(text, cell) {
 }
 
 // ===== Sort =====
+function updateSortHeaders() {
+    document.querySelectorAll('th.sortable').forEach(function(th) {
+        th.classList.remove('sort-asc', 'sort-desc');
+        if (th.dataset.col === sortCol) {
+            th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('th.sortable').forEach(function(th) {
         th.addEventListener('click', function() {
             var c = th.dataset.col;
             if (sortCol === c) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
             else { sortCol = c; sortDir = 'asc'; }
+            updateSortHeaders();
             renderGrid();
         });
     });
-    // # header click -> select all / deselect all
-    var rownumTh = document.querySelector('th.col-rownum');
-    if (rownumTh) rownumTh.addEventListener('click', selectAllRows);
 });
 
 // ===== Drag & Drop Row Reorder =====
@@ -1234,8 +1243,8 @@ function renderStatsModal(data) {
         var trendWeeks = weekly.slice().reverse();
         var trendLabels = trendWeeks.map(function(w) { return w.week_label.replace(/ \(진행중\)/, ''); });
         var trendRates = trendWeeks.map(function(w) { return w.progress_rate; });
-        var trendDoneEff = trendWeeks.map(function(w) { return w.completed_week_effort; });
-        var trendTotalEff = trendWeeks.map(function(w) { return w.total_effort; });
+        var trendDoneCount = trendWeeks.map(function(w) { return w.cumulative_completed_week; });
+        var trendTotalCount = trendWeeks.map(function(w) { return w.total_tasks; });
 
         _statsTrendChart = new Chart(document.getElementById('statsTrendChart'), {
             type: 'line',
@@ -1257,9 +1266,9 @@ function renderStatsModal(data) {
                         tension: 0.4
                     },
                     {
-                        label: '완료 공수 (d)',
-                        data: trendDoneEff,
-                        yAxisID: 'yEff',
+                        label: '완료 건수 (건)',
+                        data: trendDoneCount,
+                        yAxisID: 'yCount',
                         borderColor: '#18a058',
                         backgroundColor: 'transparent',
                         borderWidth: 2,
@@ -1272,9 +1281,9 @@ function renderStatsModal(data) {
                         borderDash: [6, 3]
                     },
                     {
-                        label: '전체 공수 (d)',
-                        data: trendTotalEff,
-                        yAxisID: 'yEff',
+                        label: '전체 건수 (건)',
+                        data: trendTotalCount,
+                        yAxisID: 'yCount',
                         borderColor: '#c8ccd8',
                         backgroundColor: 'transparent',
                         borderWidth: 1.5,
@@ -1306,9 +1315,9 @@ function renderStatsModal(data) {
                         ticks: { color: '#4f6ef7', font: { size: 10 }, callback: function(v) { return v + '%'; } },
                         grid: { color: '#f0f2f5' }
                     },
-                    yEff: {
+                    yCount: {
                         position: 'right', min: 0,
-                        ticks: { color: '#18a058', font: { size: 10 }, callback: function(v) { return v + 'd'; } },
+                        ticks: { color: '#18a058', font: { size: 10 }, callback: function(v) { return v + '건'; } },
                         grid: { display: false }
                     }
                 }

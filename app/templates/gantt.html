@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Gantt 차트{% endblock %}
+{% block title %}Gantt 차트 | Easy WBS | for Claude (via MCP){% endblock %}
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/frappe-gantt.min.css') }}">
@@ -14,11 +14,15 @@
     <button class="btn btn-sm gantt-view-btn active" data-mode="Week" onclick="changeView('Week')">주간</button>
     <button class="btn btn-sm gantt-view-btn" data-mode="Month" onclick="changeView('Month')">월간</button>
     <button class="btn btn-sm gantt-view-btn" data-mode="Quarter Year" onclick="changeView('Quarter Year')">분기</button>
+    <span class="separator">|</span>
+    <label class="gantt-toggle"><input type="checkbox" id="ganttIncludeDone" onchange="toggleIncludeDone()"> 완료
+        포함</label>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="gantt-container">
+    <div id="gantt-legend" class="gantt-legend"></div>
     <div id="gantt-chart"></div>
     <div id="gantt-empty" class="empty-state" style="display:none;">
         <p>일정이 설정된 항목이 없습니다.</p>

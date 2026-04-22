@@ -1,3 +1,4 @@
+import os
 from flask import Blueprint, g, redirect, render_template, session, url_for
 
 from app.auth import login_required
@@ -27,7 +28,8 @@ def wbs_view(project_id):
     if not role:
         return redirect(url_for('main.index'))
     project = project_model.get_project(project_id)
-    return render_template('wbs.html', project_id=project_id, project_role=role, project_name=project['name'])
+    app_version = os.environ.get('VERSION', '')
+    return render_template('wbs.html', project_id=project_id, project_role=role, project_name=project['name'], app_version=app_version)
 
 
 @main_bp.route('/project/<int:project_id>/gantt')

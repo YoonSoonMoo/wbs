@@ -106,8 +106,8 @@ def send_html_mail(
         return False, "API 키가 설정되지 않았습니다."
 
     payload = {
-        "senderAddress": "send-only@daou.co.kr",
-        "senderName": "WBS 관리 시스템",
+        "senderAddress": "kakasi@daou.co.kr",
+        "senderName": "Easy WBS | send-only",
         "title": subject,
         "body": html_body,
         "recipients": [{"address": to_address, "name": to_name, "type": "R"}],

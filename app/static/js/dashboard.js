@@ -276,12 +276,10 @@ async function changeUserRole(userId, role) {
 }
 
 async function resetUserPw(userId, email) {
-    var pw = prompt('새 비밀번호를 입력하세요 (' + email + '):');
-    if (!pw) return;
-    if (pw.length < 4) { showToast('비밀번호는 4자 이상이어야 합니다.', 'error'); return; }
+    if (!confirm(email + ' 계정으로 임시 비밀번호를 전송하시겠습니까?')) return;
     try {
-        await API.post('/api/users/' + userId + '/reset-password', { password: pw });
-        showToast('비밀번호가 초기화되었습니다.', 'success');
+        await API.post('/api/users/' + userId + '/reset-password', {});
+        showToast('임시 비밀번호가 이메일로 전송되었습니다.', 'success');
     } catch (e) {
         showToast('비밀번호 초기화 실패', 'error');
     }

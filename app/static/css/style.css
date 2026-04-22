@@ -399,6 +399,88 @@ body {
     background: rgba(255,255,255,0.3);
 }
 
+.gantt-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: rgba(255,255,255,0.85);
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    white-space: nowrap;
+}
+.gantt-toggle:hover { background: rgba(255,255,255,0.18); color: #fff; }
+.gantt-toggle input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+    accent-color: #fff;
+}
+
+/* Gantt assignee legend */
+.gantt-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    background: #fafbfd;
+    border: 1px solid #e4e7ed;
+    border-radius: 8px;
+    font-size: 12px;
+    color: #4a5068;
+}
+.gantt-legend:empty { display: none; }
+.gantt-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.gantt-legend-dot {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border-radius: 3px;
+    background: #8b92a5;
+    flex-shrink: 0;
+}
+
+/* Gantt bar colors per assignee (12-color palette, cycled) */
+.gantt .bar-wrapper.gantt-assignee-0  .bar,  .gantt-legend-dot.gantt-assignee-0  { fill: #4f6ef7; background: #4f6ef7; }
+.gantt .bar-wrapper.gantt-assignee-1  .bar,  .gantt-legend-dot.gantt-assignee-1  { fill: #18a058; background: #18a058; }
+.gantt .bar-wrapper.gantt-assignee-2  .bar,  .gantt-legend-dot.gantt-assignee-2  { fill: #f07c3e; background: #f07c3e; }
+.gantt .bar-wrapper.gantt-assignee-3  .bar,  .gantt-legend-dot.gantt-assignee-3  { fill: #7c5ef7; background: #7c5ef7; }
+.gantt .bar-wrapper.gantt-assignee-4  .bar,  .gantt-legend-dot.gantt-assignee-4  { fill: #e6a817; background: #e6a817; }
+.gantt .bar-wrapper.gantt-assignee-5  .bar,  .gantt-legend-dot.gantt-assignee-5  { fill: #e84040; background: #e84040; }
+.gantt .bar-wrapper.gantt-assignee-6  .bar,  .gantt-legend-dot.gantt-assignee-6  { fill: #0ea882; background: #0ea882; }
+.gantt .bar-wrapper.gantt-assignee-7  .bar,  .gantt-legend-dot.gantt-assignee-7  { fill: #0ea5e9; background: #0ea5e9; }
+.gantt .bar-wrapper.gantt-assignee-8  .bar,  .gantt-legend-dot.gantt-assignee-8  { fill: #8b5cf6; background: #8b5cf6; }
+.gantt .bar-wrapper.gantt-assignee-9  .bar,  .gantt-legend-dot.gantt-assignee-9  { fill: #ec4899; background: #ec4899; }
+.gantt .bar-wrapper.gantt-assignee-10 .bar,  .gantt-legend-dot.gantt-assignee-10 { fill: #14b8a6; background: #14b8a6; }
+.gantt .bar-wrapper.gantt-assignee-11 .bar,  .gantt-legend-dot.gantt-assignee-11 { fill: #f97316; background: #f97316; }
+/* Unassigned bars: default gray */
+.gantt .bar-wrapper.gantt-assignee-none .bar { fill: #9ca3af; }
+/* Progress fill uses darkened variant via filter */
+.gantt .bar-wrapper[class*="gantt-assignee-"] .bar-progress { fill: rgba(0,0,0,.35); }
+
+/* Completed tasks override assignee color with gray */
+.gantt .bar-wrapper.gantt-done .bar          { fill: #cbd5e1 !important; }
+.gantt .bar-wrapper.gantt-done .bar-progress { fill: #94a3b8 !important; }
+.gantt .bar-wrapper.gantt-done .bar-label    { fill: #64748b; }
+
+/* Today vertical line */
+.gantt .gantt-today-line {
+    stroke: #e84040;
+    stroke-width: 2;
+    stroke-dasharray: 4 3;
+    pointer-events: none;
+}
+.gantt .gantt-today-label {
+    fill: #e84040;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: var(--font-mono, 'Consolas', monospace);
+    pointer-events: none;
+}
+
 /* ===== Modal ===== */
 .modal {
     position: fixed;

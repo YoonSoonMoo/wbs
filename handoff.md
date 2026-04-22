@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | https://github.com/YoonSoonMoo/wbs.git |
-| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인) |
+| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인, Gantt 담당자 색상/완료 필터/오늘 세로선, 워크쓰루 투어) |
 
 ## 2. 기술 스택
 
@@ -63,9 +63,10 @@ wbs/
 │   │   └── js/
 │   │       ├── app.js               # API 헬퍼, 토스트 알림, 유틸리티
 │   │       ├── grid.js              # WBS 그리드 UI (인라인편집, 확장편집, 복수선택, 날짜파싱, 컨텍스트메뉴)
-│   │       ├── gantt.js             # Gantt 차트 (Frappe Gantt 래퍼)
+│   │       ├── gantt.js             # Gantt 차트 (담당자별 색상, 완료 포함 토글, 오늘 세로선, 그리드와 동일한 sort_order 정렬)
 │   │       ├── frappe-gantt.min.js  # Frappe Gantt 라이브러리 (로컬, ko 로케일 패치)
-│   │       └── dashboard.js         # 대시보드 (프로젝트 목록, 통계카드, 데이터 초기화)
+│   │       ├── walkthrough.js       # 초회 방문자용 온보딩 투어 (localStorage 기반, ❓ 가이드 버튼으로 재실행)
+│   │       └── dashboard.js         # 대시보드 (프로젝트 목록, 통계카드, 데이터 초기화, 유저 관리 모달)
 │   └── templates/
 │       ├── base.html            # 기본 레이아웃 (대시보드용, 탑바 로고 이미지, 파비콘 포함)
 │       ├── landing.html         # 랜딩 페이지 (비로그인 시 / 경로, Easy WBS 브랜드 + Provided by Claude 배지)
@@ -485,6 +486,38 @@ python run.py
   - [x] 로그인 페이지 로고 이미지 삭제 → 랜딩과 동일 브랜드 텍스트 + 배지 (`auth-brand` 컨테이너, 30px)
   - [x] 회원가입 페이지는 기존 로고 이미지 유지(필요 시 동일 교체 대기)
 
+- [x] Gantt 차트 개선 (2026-04-17):
+  - [x] 정렬 기준을 그리드와 동일하게 `sort_order`로 변경 — `dashboard_service.get_timeline_data()` `ORDER BY wbs_code` → `ORDER BY sort_order`. SELECT에 `subtask`, `detail`, `sort_order` 추가
+  - [x] 태스크 라벨 포맷 — `세부항목 15자(+ ...) + (담당자)`로 변경. `gantt.js`의 `buildGanttLabel()` 헬퍼. detail이 비어있으면 subtask → task_name 순으로 fallback, 담당자 없으면 `(담당자)` 생략
+  - [x] 담당자별 색상 통일 — `buildAssigneeColorMap()`이 정렬된 고유 담당자 리스트를 0~11 인덱스에 안정 매핑. Frappe Gantt의 `custom_class` 속성(`gantt-assignee-{idx}`)을 태스크별로 부여. 12색 팔레트(13번째부터 순환). 담당자 없으면 `gantt-assignee-none` 회색
+  - [x] 담당자 색상 범례(Legend) — 차트 위에 `#gantt-legend` 컨테이너 자동 렌더, 점+이름 나열
+  - [x] "완료 포함" 토글 체크박스 — 탑바 toolbar에 `#ganttIncludeDone` 추가 (기본 꺼짐). 토글 시 캐시된 `rawTimeline`을 필터만 재계산 후 `renderGanttChart()` 재호출. 뷰 모드(주간/월간/분기) 유지. Frappe Gantt 재생성 전에 `chartEl.innerHTML = ''`로 이전 SVG 정리
+  - [x] 완료 태스크 회색 처리 — `progress >= 100`이면 `custom_class`에 `gantt-done` 추가, CSS로 담당자 색상 덮어쓰기(`!important`). bar=`#cbd5e1`, bar-progress=`#94a3b8`, label=`#64748b`
+  - [x] 오늘 날짜 세로선 — `drawTodayLine()` 헬퍼가 `ganttChart.gantt_start`와 `options.step`/`column_width`로 오늘 X 좌표 계산 → SVG에 `<line>`(빨강 `#e84040`, 2px, `4 3` dash) + `<text>` "Today" 라벨 삽입. 초기 렌더, 완료 포함 토글, 뷰 모드 변경 시 모두 재호출. 기존 선은 항상 제거 후 재생성
+  - [x] CSS 추가 — `.gantt-toggle`, `.gantt-legend`, `.bar-wrapper.gantt-done`, `.gantt-today-line`, `.gantt-today-label`, 12개 `.bar-wrapper.gantt-assignee-{N}` 색상 규칙
+
+- [x] 워크쓰루 투어 (2026-04-17):
+  - [x] 새 모듈 `app/static/js/walkthrough.js` — 외부 의존성 없는 경량 구현 (~7KB, IIFE로 캡슐화, `window.startWalkthrough` 전역만 노출)
+  - [x] 첫 방문 자동 실행 — `localStorage` 키 `wbs_tour_done_{USER_NAME}`로 유저별 1회성. 플래그 없으면 DOMContentLoaded 후 1.2초 지연으로 자동 시작
+  - [x] 수동 재실행 버튼 — `wbs.html` 탑바 우측 끝에 `❓ 가이드` 버튼 추가 (localStorage 플래그 제거 후 강제 시작)
+  - [x] 5단계 투어 — 숨김 요소(예: 일반 유저의 AI 바)는 `offsetParent` 체크로 자동 건너뜀
+    1. 상단 기능 버튼 (첫 스텝, 6개 버튼 좌→우 순서로 상세 설명)
+    2. 오늘의 알림
+    3. AI Assistant (admin만)
+    4. 빠른검색·필터
+    5. 그리드 편집 (`maxHeight: 200`으로 스포트라이트 세로 제한 → 툴팁 공간 확보)
+  - [x] UI 디자인 — 스포트라이트는 파란 테두리(`#4f6ef7`) + 광원 효과 + `box-shadow` 9999px spread로 외부 어둡게. 툴팁은 420px 화이트 카드, ✨ 타이틀 아이콘, 진행 표시 `1/5` + 이전/다음/건너뛰기, pop-in 애니메이션
+  - [x] 조작 — 이전/다음/건너뛰기/완료 버튼, ESC 키, 창 리사이즈 시 자동 재배치
+  - [x] 탑바 기능 버튼 순서 정리 — `❓ 가이드` 버튼을 맨 오른쪽으로 이동(대시보드→통계→CSV→Excel→Excel 붙여넣기→Gantt→가이드). 워크쓰루의 첫 스텝 설명도 `<ul class="tour-list">` 형태로 좌→우 순서와 일치시켜 재정렬
+  - [x] CSS 추가 — `wbs.css`의 `.tour-overlay`, `.tour-spotlight`, `.tour-tooltip`, `.tour-title/text/meta/progress/buttons/btn`, `.tour-list`, `@keyframes tour-fade-in/pop-in`
+
+- [x] 패스워드 리셋 및 강제 변경 플로우 개선 (2026-04-22):
+  - [x] 마이그레이션 `005_password_reset.sql` — `user` 테이블에 `requires_password_change` 플래그 추가
+  - [x] `auth.py` 및 `base.html` 변경 — 임시 비밀번호로 로그인할 경우 화면 이동을 차단하는 모달 창을 전면에 띄워 새 비밀번호 입력을 강제
+  - [x] `api_users.py` 리셋 로직 변경 — 관리자가 임의 지정하던 방식에서 서버가 10자리 난수 비밀번호를 자동 생성하고 이메일로 전송하도록 변경
+  - [x] 비밀번호 변경 엔드포인트 추가 — `/api/users/me/password` 사용자의 비밀번호 변경 및 강제 플래그 해제 적용
+  - [x] 발송자 정보 수정 — `mail_service.py`의 메일 발송자 정보를 `Easy WBS | send-only <kakasi@daou.co.kr>`로 변경
+
 ## 9. 미구현 / 향후 작업
 
 - [ ] 테스트 코드 작성 (`tests/`)
@@ -494,6 +527,6 @@ python run.py
 - [ ] Excel Import UI (파일 업로드 폼)
 - [ ] 에러 핸들링 고도화 (전역 에러 핸들러)
 - [ ] 프로덕션 배포 설정 (waitress/gunicorn)
-- [ ] 본인 비밀번호 변경 기능 (관리자 리셋은 구현 완료, 사용자 셀프 변경은 미구현)
+- [x] 본인 비밀번호 변경 기능 (관리자 리셋 시 강제 팝업을 통한 변경 플로우 한정 구현)
 - [x] 관리자 사용자 관리 UI (역할 변경, 패스워드 리셋, 활성/비활성 토글) — 2026-04-17 완료. 유저 삭제는 미구현(비활성화로 대체)
 - [ ] AI 어시스턴트 동시성 개선 — 현재 Claude CLI subprocess 동기 호출로 복수 사용자 동시 질의 시 순차 처리됨. 개선 방향: `threaded=True` (단기), Celery/RQ 작업 큐 (중기), anthropic SDK 직접 호출 (장기 권장)

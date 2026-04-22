@@ -193,13 +193,16 @@ def get_weekly_stats(project_id, num_weeks=8):
     # 주차 목록 구성: [이번 주(진행중), 지난 num_weeks개 완료 주] - 최신 순
     weeks = []
 
-    # 0: 이번 주 (진행중, 월요일~오늘)
+    sunday_of_current = monday_of_current + timedelta(days=6)
+    friday_of_current = monday_of_current + timedelta(days=4)
+
+    # 0: 이번 주 (진행중, 월요일~일요일)
     weeks.append({
         'week_start': monday_of_current.isoformat(),
-        'week_end': today.isoformat(),
+        'week_end': sunday_of_current.isoformat(),
         'week_cutoff': today.isoformat(),    # 누적 집계 기준일
         'label': _week_label(monday_of_current) + ' (진행중)',
-        'date_range': _date_range(monday_of_current, today),
+        'date_range': _date_range(monday_of_current, friday_of_current),
         'is_current': True,
     })
 

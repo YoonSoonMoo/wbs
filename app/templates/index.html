@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}대시보드 - WBS 관리 시스템{% endblock %}
+{% block title %}대시보드 | Easy WBS | for Claude (via MCP){% endblock %}
 
 {% block content %}
 <div class="dashboard">
@@ -86,7 +86,9 @@
                     </tr>
                 </thead>
                 <tbody id="user-mgmt-tbody">
-                    <tr><td colspan="5" class="user-mgmt-empty">불러오는 중...</td></tr>
+                    <tr>
+                        <td colspan="5" class="user-mgmt-empty">불러오는 중...</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -96,7 +98,7 @@
 
 <script>
     const USER_ROLE = '{{ user_role }}';
-    const CURRENT_USER_ID = {{ user_id|default(0) }};
+    const CURRENT_USER_ID = {{ user_id|default (0) }};
 </script>
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}

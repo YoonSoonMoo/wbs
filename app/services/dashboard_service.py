@@ -53,15 +53,15 @@ def get_delayed_items(project_id):
 
 
 def get_timeline_data(project_id):
-    """Gantt 차트용 타임라인 데이터를 반환한다."""
+    """Gantt 차트용 타임라인 데이터를 반환한다. 정렬은 그리드와 동일하게 sort_order 기준."""
     db = get_db()
     rows = db.execute(
-        """SELECT id, wbs_code, task_name, parent_id, level,
-                  plan_start, plan_end, actual_start, actual_end,
+        """SELECT id, wbs_code, task_name, subtask, detail, parent_id, level,
+                  sort_order, plan_start, plan_end, actual_start, actual_end,
                   progress, assignee, is_milestone
            FROM wbs_item
            WHERE project_id = ? AND (plan_start IS NOT NULL OR actual_start IS NOT NULL)
-           ORDER BY wbs_code""",
+           ORDER BY sort_order""",
         (project_id,),
     ).fetchall()
     return [dict(r) for r in rows]

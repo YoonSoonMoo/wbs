@@ -1,76 +1,82 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>회원가입 - WBS 관리 시스템</title>
-<link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>회원가입 - Easy WBS | for Claude (via MCP)</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
+
 <body>
-<div class="auth-container">
-    <div class="auth-card">
-        <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Easy WBS" class="auth-logo">
-        <p class="auth-subtitle">회원가입</p>
+    <div class="auth-container">
+        <div class="auth-card">
+            <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Easy WBS" class="auth-logo">
+            <p class="auth-subtitle">회원가입</p>
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        {% for category, message in messages %}
-        <div class="flash flash-{{ category }}">{{ message }}</div>
-        {% endfor %}
-        {% endif %}
-        {% endwith %}
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
 
-        <form method="POST" action="/register" onsubmit="return validateRegister(this)">
-            <div class="form-group">
-                <label for="name">이름</label>
-                <input type="text" id="name" name="name" required placeholder="이름을 입력하세요" autofocus>
-            </div>
-            <div class="form-group">
-                <label for="email">이메일</label>
-                <input type="email" id="email" name="email" required placeholder="이메일을 입력하세요">
-            </div>
-            <div class="form-group">
-                <label for="password">비밀번호</label>
-                <input type="password" id="password" name="password" required minlength="4" placeholder="비밀번호 (4자 이상)">
-            </div>
-            <div class="form-group">
-                <label for="password_confirm">비밀번호 확인</label>
-                <input type="password" id="password_confirm" name="password_confirm" required minlength="4" placeholder="비밀번호를 다시 입력하세요">
-                <div id="pwMatchMsg" class="pw-match-msg"></div>
-            </div>
-            <button type="submit" class="btn btn-primary auth-btn">회원가입</button>
-        </form>
-        <script>
-        (function() {
-            var pw = document.getElementById('password');
-            var pc = document.getElementById('password_confirm');
-            var msg = document.getElementById('pwMatchMsg');
-            function check() {
-                if (!pc.value) { msg.textContent = ''; msg.className = 'pw-match-msg'; return; }
-                if (pw.value === pc.value) {
-                    msg.textContent = '✓ 비밀번호가 일치합니다.';
-                    msg.className = 'pw-match-msg ok';
-                } else {
-                    msg.textContent = '✗ 비밀번호가 일치하지 않습니다.';
-                    msg.className = 'pw-match-msg err';
+            <form method="POST" action="/register" onsubmit="return validateRegister(this)">
+                <div class="form-group">
+                    <label for="name">이름</label>
+                    <input type="text" id="name" name="name" required placeholder="이름을 입력하세요" autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="email">이메일</label>
+                    <input type="email" id="email" name="email" required placeholder="이메일을 입력하세요">
+                </div>
+                <div class="form-group">
+                    <label for="password">비밀번호</label>
+                    <input type="password" id="password" name="password" required minlength="4"
+                        placeholder="비밀번호 (4자 이상)">
+                </div>
+                <div class="form-group">
+                    <label for="password_confirm">비밀번호 확인</label>
+                    <input type="password" id="password_confirm" name="password_confirm" required minlength="4"
+                        placeholder="비밀번호를 다시 입력하세요">
+                    <div id="pwMatchMsg" class="pw-match-msg"></div>
+                </div>
+                <button type="submit" class="btn btn-primary auth-btn">회원가입</button>
+            </form>
+            <script>
+                (function () {
+                    var pw = document.getElementById('password');
+                    var pc = document.getElementById('password_confirm');
+                    var msg = document.getElementById('pwMatchMsg');
+                    function check() {
+                        if (!pc.value) { msg.textContent = ''; msg.className = 'pw-match-msg'; return; }
+                        if (pw.value === pc.value) {
+                            msg.textContent = '✓ 비밀번호가 일치합니다.';
+                            msg.className = 'pw-match-msg ok';
+                        } else {
+                            msg.textContent = '✗ 비밀번호가 일치하지 않습니다.';
+                            msg.className = 'pw-match-msg err';
+                        }
+                    }
+                    pw.addEventListener('input', check);
+                    pc.addEventListener('input', check);
+                })();
+                function validateRegister(form) {
+                    if (form.password.value !== form.password_confirm.value) {
+                        alert('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
+                        form.password_confirm.focus();
+                        return false;
+                    }
+                    return true;
                 }
-            }
-            pw.addEventListener('input', check);
-            pc.addEventListener('input', check);
-        })();
-        function validateRegister(form) {
-            if (form.password.value !== form.password_confirm.value) {
-                alert('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
-                form.password_confirm.focus();
-                return false;
-            }
-            return true;
-        }
-        </script>
-        <p class="auth-link">이미 계정이 있으신가요? <a href="/login">로그인</a></p>
+            </script>
+            <p class="auth-link">이미 계정이 있으신가요? <a href="/login">로그인</a></p>
+        </div>
     </div>
-</div>
 </body>
+
 </html>

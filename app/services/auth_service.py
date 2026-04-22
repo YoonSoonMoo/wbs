@@ -54,13 +54,13 @@ def update_user_role(user_id, new_role):
     db.commit()
 
 
-def reset_user_password(user_id, new_password):
+def reset_user_password(user_id, new_password, require_change=False):
     if not new_password or len(new_password) < 4:
         raise ValueError("비밀번호는 4자 이상이어야 합니다.")
     db = get_db()
     db.execute(
-        "UPDATE user SET password_hash = ? WHERE id = ?",
-        (generate_password_hash(new_password), user_id),
+        "UPDATE user SET password_hash = ?, requires_password_change = ? WHERE id = ?",
+        (generate_password_hash(new_password), 1 if require_change else 0, user_id),
     )
     db.commit()
 

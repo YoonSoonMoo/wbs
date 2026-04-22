@@ -17,6 +17,10 @@ def login():
             session['user_id'] = user['id']
             session['user_name'] = user['name']
             session['user_role'] = user['role']
+            if user.get('requires_password_change'):
+                session['requires_pw_change'] = True
+            else:
+                session.pop('requires_pw_change', None)
             return redirect(url_for('main.index'))
         else:
             flash('이메일 또는 비밀번호가 올바르지 않습니다.', 'error')
@@ -49,4 +53,4 @@ def register():
 @auth_bp.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('auth.login'))
+    return redirect(url_for('main.index'))
