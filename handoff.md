@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | https://github.com/YoonSoonMoo/wbs.git |
-| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인, Gantt 담당자 색상/완료 필터/오늘 세로선, 워크쓰루 투어) |
+| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인, Gantt 담당자 색상/완료 필터/오늘 세로선, 워크쓰루 투어), 2026-04-22 (패스워드 리셋 강제 변경 플로우), 2026-04-23 (API 테스트 스위트, 프로젝트 개요 AI 주입, 주간 통계 공수 기준 진척률, 랜딩 AI 쇼케이스) |
 
 ## 2. 기술 스택
 
@@ -59,7 +59,8 @@ wbs/
 │   │   │   ├── wbs.css              # WBS 그리드 전용 스타일 (template 기반)
 │   │   │   └── frappe-gantt.min.css # Frappe Gantt CSS (로컬)
 │   │   ├── img/
-│   │   │   └── logo.png             # 파비콘 및 WBS 페이지 로고 이미지
+│   │   │   ├── logo.png             # 파비콘 및 WBS 페이지 로고 이미지
+│   │   │   └── AI_assistant.png     # 랜딩 페이지 AI 어시스턴트 쇼케이스 스크린샷
 │   │   └── js/
 │   │       ├── app.js               # API 헬퍼, 토스트 알림, 유틸리티
 │   │       ├── grid.js              # WBS 그리드 UI (인라인편집, 확장편집, 복수선택, 날짜파싱, 컨텍스트메뉴)
@@ -81,7 +82,7 @@ wbs/
 │   ├── 003_stats.sql            # 통계 스키마 (updated_by, completed_at 컬럼, 완료 트리거)
 │   └── 004_user_mgmt.sql        # 유저 관리 (is_active 컬럼, participant → developer 이관)
 ├── instance/                    # SQLite DB 파일 (자동 생성, gitignore 대상)
-├── tests/                       # 테스트 디렉토리 (미구현)
+├── tests/                       # pytest API 테스트 스위트 (conftest + 8개 파일, 67건)
 ├── template/
 │   └── wbs-manage.html          # UI 레퍼런스 원본 (단독 HTML, localStorage 기반)
 ├── .venv/                       # Python 가상환경
@@ -518,9 +519,46 @@ python run.py
   - [x] 비밀번호 변경 엔드포인트 추가 — `/api/users/me/password` 사용자의 비밀번호 변경 및 강제 플래그 해제 적용
   - [x] 발송자 정보 수정 — `mail_service.py`의 메일 발송자 정보를 `Easy WBS | send-only <kakasi@daou.co.kr>`로 변경
 
+- [x] API 테스트 · 프로젝트 개요 AI 주입 · 공수 기준 진척률 · AI 쇼케이스 (2026-04-23):
+  - [x] **pytest 기반 API 테스트 스위트 신설** (67건, `tests/`):
+    - `tests/conftest.py` — 임시 파일 SQLite로 TestingConfig(`:memory:`) 오버라이드. Config 클래스 속성을 monkeypatch 하여 admin 시드(email/password/name) 제어. admin/developer/viewer 로그인 클라이언트, 샘플 프로젝트·WBS 항목 픽스처 제공
+    - `test_auth.py` (9건): `/login`·`/register`·`/logout`, 비활성 계정 차단, `/api/users/me/password` (짧은 PW 400, 변경 후 재로그인)
+    - `test_users_api.py` (8건): 목록/역할/활성 토글/비밀번호 리셋 — admin 게이팅, 본인 비활성화 금지. 메일 발송은 `send_html_mail` monkeypatch
+    - `test_projects_api.py` (12건): CRUD, admin-only 생성·삭제, 비-admin은 본인 멤버 프로젝트만 조회, 멤버 추가/조회
+    - `test_wbs_api.py` (24건): CRUD·PATCH·이동·배치·초기화, flat/tree 조회, stats·weekly-stats(26주 상한)·dashboard·delayed·schedule-gaps, AI 엔드포인트(`ai_process_command` monkeypatch)
+    - `test_import_export_api.py` (4건): CSV/Excel export, import 입력 검증
+    - `test_ai_overview.py` (5건): 프로젝트 개요 주입·전반 분석 지침 검증
+    - `test_weekly_stats_rate.py` (5건): 공수 기준 진척률·사사오입 경계
+    - 외부 의존(NCP 메일, Claude CLI) monkeypatch 차단. `pytest==8.3.5` 사용
+  - [x] **프로젝트 설명란 → 전체 개요/마일스톤 기입 유도** (`app/templates/index.html`, `app/static/css/style.css`):
+    - 라벨/textarea `title` 툴팁, rows 3 → 8, 목적/범위/마일스톤/리스크 포맷 placeholder
+    - `.label-hint` / `.form-hint` 신규 CSS — "AI 분석 시 전반적 상황 파악과 PM 조언에 활용" 안내 텍스트 표시
+  - [x] **AI 어시스턴트에 프로젝트 개요 주입** (`app/services/ai_assistant.py`):
+    - `_get_project_overview(project_id)` — 프로젝트명·기간·description 을 구조화 문자열로 반환 (개요 미기입 시 명시)
+    - `_build_system_prompt(items_summary, project_overview="")` — 프롬프트에 `## 프로젝트 개요` 섹션 삽입
+    - 지침 강화: "프로젝트 분석", "전반적인 진척상황", "리스크 점검", "PM 관점 조언" 질의 시 개요+WBS 기반 insight(마일스톤 대비 진척·주요 리스크·권장 액션) 작성 강제. 개요가 비었으면 그 사실도 함께 언급하도록 유도
+    - `process_command`이 `_get_project_overview()` 결과를 프롬프트에 전달
+  - [x] **주간 통계 "전체 진척률" 공수 기준 변경** (`app/services/wbs_service.py`):
+    - `overview.progress_rate` = 완료 공수 / 전체 공수 × 100 (이전: 태스크 개수 비율, 정수 반올림)
+    - `_round_half_up_1()` 헬퍼 — `Decimal` + `ROUND_HALF_UP`. Python 내장 `round()` 의 뱅커즈 라운딩(0.15 → 0.1)이 한국식 사사오입과 달라 별도 구현
+    - 결과: 소수 둘째자리 사사오입 → 소수 첫째자리까지 표시 (예: `3/7*100 → 42.9`)
+    - `overview.delta_rate` 도 동일 헬퍼 적용. 주간(weekly) 행의 `progress_rate`(주간 달성률)는 의미가 달라 태스크 기반 유지
+    - 프론트(`grid.js:1098`)는 `ov.progress_rate + '%'`로 그대로 출력 → "33.3%" 형태
+  - [x] **랜딩 페이지 AI 어시스턴트 쇼케이스 섹션** (`app/templates/landing.html`, `app/static/css/style.css`, `app/static/img/AI_assistant.png`):
+    - Features 뒤, Workflow 앞에 `#ai-assistant` 섹션 신설. 네비게이션 메뉴 링크 추가
+    - 섹션 헤드: "프로젝트 상황을 **AI가 분석**, PM의 판단을 돕습니다"
+    - 좌측 바디: `PM Advisor Mode` 뱃지, 리드 카피, 예시 질의 칩 4개("프로젝트 전반적인 진척 상황 정리해줘" 등), 핵심 포인트 4개(전반 상황 요약·PM 조언·자연어 편집·일정 갭 인식), CTA 버튼 + 개요 기입 안내
+    - 우측 비주얼: 브라우저 프레임(신호등 도트 + 타이틀) 내 `AI_assistant.png` 임베드, `loading="lazy"`, 설명 캡션
+    - CSS: `.landing-ai-section`(좌상단 라디얼 그라디언트), `.landing-ai`(2-column minmax), `.landing-ai-chip`(hover 그림자), `.landing-ai-frame`(큰 그림자), 960px 이하 1열 반응형
+    - 히어로 서브 카피에 "PM의 판단을 돕는 AI 어시스턴트" 그라디언트 강조 추가, `.accent-soft` 공용 클래스화
+  - [x] **보조 개선**:
+    - `run.py` — `app.run(threaded=True)` 로 개발 서버 멀티스레드화. AI 어시스턴트 동시성의 단기 개선(복수 사용자 동시 질의 시 순차 대기 완화)
+    - `app/static/js/grid.js` — AI 지연 요약 칩의 라벨 우선순위를 `detail || subtask || task_name` 로 바꾸고 12자 절단(...)으로 가독성 개선
+    - `app/templates/gantt.html` — `PROJECT_ID`를 정수가 아닌 문자열로 직렬화 (`{{ project_id }}` → `"{{ project_id }}"`)하여 JS 측 타입 일관성 확보
+
 ## 9. 미구현 / 향후 작업
 
-- [ ] 테스트 코드 작성 (`tests/`)
+- [x] 테스트 코드 작성 (`tests/`) — 2026-04-23 pytest 기반 API 테스트 스위트 67건 (conftest + 8개 파일). 서비스 계층 단위 테스트·프론트 E2E는 미구현
 - [ ] 변경 이력 추적
 - [ ] 인쇄/PDF 보고서 출력
 - [x] Chart.js 통계 모달 차트 (도넛, 라인) — 대시보드 페이지 차트는 미구현
@@ -529,4 +567,4 @@ python run.py
 - [ ] 프로덕션 배포 설정 (waitress/gunicorn)
 - [x] 본인 비밀번호 변경 기능 (관리자 리셋 시 강제 팝업을 통한 변경 플로우 한정 구현)
 - [x] 관리자 사용자 관리 UI (역할 변경, 패스워드 리셋, 활성/비활성 토글) — 2026-04-17 완료. 유저 삭제는 미구현(비활성화로 대체)
-- [ ] AI 어시스턴트 동시성 개선 — 현재 Claude CLI subprocess 동기 호출로 복수 사용자 동시 질의 시 순차 처리됨. 개선 방향: `threaded=True` (단기), Celery/RQ 작업 큐 (중기), anthropic SDK 직접 호출 (장기 권장)
+- [ ] AI 어시스턴트 동시성 개선 — 2026-04-23 `app.run(threaded=True)`로 단기 개선 적용(여러 요청 동시 수신 가능). 그러나 Claude CLI subprocess 자체는 여전히 개별 요청당 120초 타임아웃 동기 호출이라 근본 해결은 아님. 남은 방향: Celery/RQ 작업 큐(중기), anthropic SDK 직접 호출로 전환(장기 권장)

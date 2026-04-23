@@ -21,6 +21,7 @@
             </a>
             <nav class="landing-menu">
                 <a href="#features">주요 기능</a>
+                <a href="#ai-assistant">AI 어시스턴트</a>
                 <a href="#workflow">작업 흐름</a>
                 <a href="#stack">기술 스택</a>
             </nav>
@@ -38,7 +39,7 @@
                 체계적인 프로젝트 관리의 <span class="accent">시작</span>
             </h1>
             <p class="landing-hero-sub">
-                계층적 WBS 그리드, Gantt 차트, AI 어시스턴트까지.<br>
+                계층적 WBS 그리드, Gantt 차트, 그리고 <span class="accent-soft">PM의 판단을 돕는 AI 어시스턴트</span>.<br>
                 프로젝트의 모든 작업을 한 곳에서 계획하고 추적하세요.
             </p>
             <div class="landing-hero-cta">
@@ -145,6 +146,62 @@
                         <li>HTML 포맷으로 가독성 확보</li>
                     </ul>
                 </article>
+            </div>
+        </div>
+    </section>
+
+    <section class="landing-section landing-ai-section" id="ai-assistant">
+        <div class="landing-section-inner">
+            <div class="landing-section-head">
+                <div class="landing-kicker">AI Assistant</div>
+                <h2>프로젝트 상황을 <span class="accent">AI가 분석</span>, PM의 판단을 돕습니다</h2>
+                <p>프로젝트 개요·마일스톤과 실시간 WBS 데이터를 함께 읽어, 지금 PM이 알아야 할 전반적 진척·지연·리스크를 요약하고 다음 액션을 제안합니다.</p>
+            </div>
+
+            <div class="landing-ai">
+                <div class="landing-ai-body">
+                    <div class="landing-ai-badge">✦ PM Advisor Mode</div>
+                    <h3>물어보세요 — "프로젝트 분석해줘"</h3>
+                    <p class="landing-ai-lead">
+                        프로젝트 설명란에 기입한 <strong>개요 · 목적 · 마일스톤 · 리스크</strong> 와 현재 WBS 데이터를
+                        함께 맥락화해, 담당자별 진행률·일정 갭·주요 리스크를 한 번에 요약합니다.
+                    </p>
+
+                    <div class="landing-ai-examples">
+                        <div class="landing-ai-chip">"프로젝트 전반적인 진척 상황 정리해줘"</div>
+                        <div class="landing-ai-chip">"리스크가 큰 태스크 먼저 알려줘"</div>
+                        <div class="landing-ai-chip">"마일스톤 대비 현재 어디 서 있지?"</div>
+                        <div class="landing-ai-chip">"이번 주 지연 이슈 요약"</div>
+                    </div>
+
+                    <ul class="landing-ai-list">
+                        <li><span class="landing-ai-ico">◆</span><b>전반 상황 요약</b> — 진척률, 공수 소진, 담당자별 부담, 이번 주 리스크를 한 문단으로</li>
+                        <li><span class="landing-ai-ico">◆</span><b>PM 관점 조언</b> — 마일스톤 이탈 가능성, 재할당 권장 항목, 다음 주 우선순위</li>
+                        <li><span class="landing-ai-ico">◆</span><b>자연어 편집</b> — "이필원 담당 태스크 완료 처리", "X 업무 추가" 도 한 줄로</li>
+                        <li><span class="landing-ai-ico">◆</span><b>일정 갭 인식</b> — 계획일 대비 실제일(착수/종료) 차이를 자동 계산해 리포트</li>
+                    </ul>
+
+                    <div class="landing-ai-cta">
+                        <a href="/login" class="landing-btn landing-btn-primary">지금 체험해보기 →</a>
+                        <span class="landing-ai-note">설명란에 프로젝트 개요와 마일스톤을 기입해 두면 분석 품질이 크게 올라갑니다.</span>
+                    </div>
+                </div>
+
+                <figure class="landing-ai-visual">
+                    <div class="landing-ai-frame">
+                        <div class="landing-ai-frame-bar" aria-hidden="true">
+                            <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+                            <span class="landing-ai-frame-title">AI Assistant · 프로젝트 분석</span>
+                        </div>
+                        <img src="{{ url_for('static', filename='img/AI_assistant.png') }}"
+                             alt="AI 어시스턴트가 프로젝트 전반 진척 상황을 분석해 PM에게 조언하는 화면"
+                             class="landing-ai-img"
+                             loading="lazy">
+                    </div>
+                    <figcaption class="landing-ai-caption">
+                        실제 분석 화면 — WBS 데이터와 프로젝트 개요를 기반으로 전반 상황·리스크·권장 액션을 생성합니다.
+                    </figcaption>
+                </figure>
             </div>
         </div>
     </section>

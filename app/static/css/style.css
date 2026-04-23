@@ -554,6 +554,27 @@ body {
 }
 .form-row .form-group { flex: 1; }
 
+.form-group .label-hint {
+    font-weight: 400;
+    color: var(--muted, #6b7280);
+    font-size: 11px;
+    margin-left: 4px;
+}
+
+.form-group .form-hint {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--muted, #6b7280);
+    line-height: 1.5;
+}
+
+.form-group textarea::placeholder {
+    white-space: pre-wrap;
+    color: #9ca3af;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
 .form-actions {
     display: flex;
     justify-content: flex-end;
@@ -1162,4 +1183,122 @@ body {
     .landing-hero-title { font-size: 32px; }
     .landing-hero-meta { flex-direction: column; gap: 8px; }
 }
+
+/* ===== AI Assistant showcase section ===== */
+.landing-ai-section {
+    background: radial-gradient(1200px 420px at 15% 0%, #eef3fb 0%, #ffffff 65%);
+}
+.landing-hero-sub .accent-soft,
+.landing-section-head h2 .accent {
+    background: linear-gradient(120deg, #2B579A, #217346);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    font-weight: 700;
+}
+.landing-ai {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    gap: 48px;
+    align-items: center;
+}
+.landing-ai-body { min-width: 0; }
+.landing-ai-badge {
+    display: inline-block;
+    padding: 6px 12px;
+    font-size: 11px; font-weight: 700; letter-spacing: .8px;
+    color: #2B579A; background: #eaf0fa;
+    border-radius: 999px; margin-bottom: 14px; text-transform: uppercase;
+}
+.landing-ai-body h3 {
+    font-size: 26px; font-weight: 800; color: #0f1220;
+    letter-spacing: -.4px; margin-bottom: 14px; line-height: 1.3;
+}
+.landing-ai-lead {
+    font-size: 15px; color: #50566a; line-height: 1.7; margin-bottom: 20px;
+}
+.landing-ai-lead strong { color: #0f1220; font-weight: 700; }
+
+.landing-ai-examples {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px;
+}
+.landing-ai-chip {
+    font-size: 13px; color: #2B579A;
+    background: #fff; border: 1px solid #d7e0f1;
+    padding: 8px 14px; border-radius: 999px;
+    box-shadow: 0 1px 2px rgba(43,87,154,.04);
+    transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+.landing-ai-chip:hover {
+    border-color: #2B579A;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px -8px rgba(43,87,154,.35);
+}
+
+.landing-ai-list {
+    list-style: none; padding: 0; margin: 0 0 26px;
+}
+.landing-ai-list li {
+    position: relative; padding-left: 24px;
+    font-size: 14px; color: #4a4f5c; line-height: 1.65;
+    margin-bottom: 10px;
+}
+.landing-ai-list li b { color: #0f1220; font-weight: 700; margin-right: 4px; }
+.landing-ai-list .landing-ai-ico {
+    position: absolute; left: 0; top: 0;
+    color: #217346; font-size: 12px; line-height: 1.7;
+}
+
+.landing-ai-cta {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 16px;
+}
+.landing-ai-note {
+    font-size: 12px; color: #6a7080; line-height: 1.5;
+    max-width: 320px;
+}
+
+/* Browser-frame screenshot */
+.landing-ai-visual {
+    margin: 0;
+}
+.landing-ai-frame {
+    background: linear-gradient(135deg, #f4f7fc 0%, #eaf0fa 100%);
+    border: 1px solid #dde4ef;
+    border-radius: 14px;
+    padding: 0;
+    overflow: hidden;
+    box-shadow:
+        0 28px 60px -24px rgba(43,87,154,.32),
+        0 4px 14px -6px rgba(15,18,32,.08);
+}
+.landing-ai-frame-bar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 10px 14px;
+    background: #f6f8fc;
+    border-bottom: 1px solid #e4e9f2;
+    font-size: 11px; color: #6a7080;
+}
+.landing-ai-frame-bar .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    display: inline-block;
+}
+.landing-ai-frame-bar .dot-r { background: #ff5f56; }
+.landing-ai-frame-bar .dot-y { background: #ffbd2e; }
+.landing-ai-frame-bar .dot-g { background: #27c93f; }
+.landing-ai-frame-title {
+    margin-left: 8px; font-weight: 600; letter-spacing: .2px;
+}
+.landing-ai-img {
+    display: block; width: 100%; height: auto;
+    background: #fff;
+}
+.landing-ai-caption {
+    margin-top: 12px; font-size: 12px; color: #6a7080;
+    line-height: 1.5; text-align: center;
+}
+
+@media (max-width: 960px) {
+    .landing-ai { grid-template-columns: 1fr; gap: 32px; }
+    .landing-ai-body h3 { font-size: 22px; }
+    .landing-ai-note { max-width: none; }
+}
+
 ::-webkit-scrollbar-thumb:hover { background: #A0A0A0; }

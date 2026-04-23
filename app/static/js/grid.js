@@ -996,7 +996,9 @@ function sendAiQuery() {
                         html += '<div class="ai-schedule-summary">';
                         for (var i = 0; i < delayItems.length; i++) {
                             var it = delayItems[i];
-                            html += '<span class="ai-gap-chip gap-delay">#' + it._row_number + ' ' + esc(it.task_name || '') + ' <strong>+' + it.end_gap_days + '일</strong></span>';
+                            var label = it.detail || it.subtask || it.task_name || '';
+                            if (label.length > 12) label = label.substring(0, 12) + '...';
+                            html += '<span class="ai-gap-chip gap-delay">#' + it._row_number + ' ' + esc(label) + ' <strong>+' + it.end_gap_days + '일</strong></span>';
                         }
                         html += '</div>';
                     }

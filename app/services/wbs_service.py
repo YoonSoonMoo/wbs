@@ -1,8 +1,23 @@
 from datetime import date, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 
 from app.extensions import get_db
 from app.models import wbs_item as wbs_model
 from app.services.wbs_code_service import get_next_sort_order, recalculate_codes
+
+
+def _round_half_up_1(value) -> float:
+    """소수 둘째자리에서 사사오입하여 소수 첫째자리까지 반환한다.
+
+    Python 내장 round()는 뱅커즈 라운딩(Half to Even)이라 0.15 → 0.1 이 되는 등
+    한국식 '사사오입' 규칙과 맞지 않는다. Decimal + ROUND_HALF_UP 으로 안전하게 처리.
+    """
+    if value is None:
+        return 0.0
+    try:
+        return float(Decimal(str(value)).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP))
+    except (ValueError, ArithmeticError):
+        return 0.0
 
 
 def get_tree(project_id):
@@ -346,7 +361,11 @@ def get_weekly_stats(project_id, num_weeks=8):
     completed_now = row_now['completed'] or 0
     total_effort_now = round(float(row_now['total_effort']), 1)
     completed_effort_now = round(float(row_now['completed_effort']), 1)
-    rate_now = round(completed_now / total_now * 100) if total_now > 0 else 0
+    # 전체 진척률 = 완료 공수 / 전체 공수 (공수 기준, 소수 둘째자리 사사오입)
+    rate_now = (
+        _round_half_up_1(completed_effort_now / total_effort_now * 100)
+        if total_effort_now > 0 else 0.0
+    )
 
     # overview delta = 현재 vs 지난 완료 주(result[1])
     overview = {
@@ -373,7 +392,7 @@ def get_weekly_stats(project_id, num_weeks=8):
         overview['delta_completed'] = completed_now - lw['total_completed']
         overview['delta_total_effort'] = round(total_effort_now - lw['total_effort'], 1)
         overview['delta_completed_effort'] = round(completed_effort_now - lw['total_completed_effort'], 1)
-        overview['delta_rate'] = round(rate_now - lw['progress_rate'], 1)
+        overview['delta_rate'] = _round_half_up_1(rate_now - lw['progress_rate'])
 
     # 담당자별 현황
     rows_assignee = db.execute(

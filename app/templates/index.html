@@ -31,8 +31,20 @@
                 <input type="text" id="project-name" required placeholder="프로젝트명을 입력하세요">
             </div>
             <div class="form-group">
-                <label for="project-desc">설명</label>
-                <textarea id="project-desc" rows="3" placeholder="프로젝트 설명"></textarea>
+                <label for="project-desc" title="프로젝트 전체 개요와 주요 마일스톤을 기입하세요. AI 분석 시 프로젝트 전반 상황 판단의 근거로 활용됩니다.">
+                    설명 <span class="label-hint" aria-hidden="true">(개요 · 마일스톤)</span>
+                </label>
+                <textarea id="project-desc" rows="8"
+                          title="프로젝트의 목적·범위·주요 마일스톤을 기입하세요. AI 분석(&quot;프로젝트 분석&quot;, &quot;전반적인 진척상황&quot; 등)에서 이 내용을 참고해 PM에게 조언합니다."
+                          placeholder="예시)
+[목적] 내부 WBS 관리 시스템 구축
+[범위] 프로젝트/유저/WBS CRUD, 대시보드, AI 어시스턴트
+[주요 마일스톤]
+ - M1 (4/30): 기본 CRUD 완성
+ - M2 (5/31): 대시보드·통계 공개
+ - M3 (6/30): AI 어시스턴트 GA
+[주요 리스크] 외부 메일 API 연동 일정, Claude CLI 의존성"></textarea>
+                <div class="form-hint">프로젝트 전체 개요와 마일스톤을 기입해 두면, AI 분석 시 전반적 상황 파악과 PM 조언에 활용됩니다.</div>
             </div>
             <div class="form-row">
                 <div class="form-group">

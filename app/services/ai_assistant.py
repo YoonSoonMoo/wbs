@@ -10,6 +10,7 @@ import sys
 from datetime import date, datetime, timedelta
 
 from app.extensions import get_db
+from app.models import project as project_model
 from app.models import wbs_item as wbs_model
 from app.services import wbs_service
 
@@ -63,14 +64,24 @@ def _parse_json_response(text: str) -> dict:
         return {}
 
 
-def _build_system_prompt(items_summary: str) -> str:
+def _build_system_prompt(items_summary: str, project_overview: str = "") -> str:
     """자연어 → WBS 명령 변환용 시스템 프롬프트를 생성한다."""
     today = datetime.now().strftime('%Y-%m-%d')
-    return f"""당신은 WBS(Work Breakdown Structure) 관리 AI 어시스턴트입니다.
+    overview_block = project_overview if project_overview else "(프로젝트 개요 미기입)"
+    return f"""당신은 WBS(Work Breakdown Structure) 관리 AI 어시스턴트이자 PM 자문역입니다.
 사용자의 자연어 요청을 분석하여 아래 JSON 형식으로 응답하세요.
 
 ## 현재 날짜
 {today}
+
+## 프로젝트 개요 (PM이 기입한 전체 개요 · 목적 · 마일스톤 · 리스크)
+{overview_block}
+
+※ "프로젝트 분석", "프로젝트 전반적인 진척상황", "전반 상황", "리스크 점검", "PM 관점 조언"
+   등 프로젝트 전체를 묻는 질의에는 위 **프로젝트 개요**와 아래 WBS 데이터를 함께 참고하여
+   insight 필드에 전반 상황 판단과 PM을 위한 조언(마일스톤 대비 진척, 주요 지연/리스크, 권장 액션)을
+   반드시 작성하세요. 개요가 비어 있다면 WBS 데이터만으로 판단하되, 개요가 없어 근거가 제한적임을
+   함께 언급하세요.
 
 ## WBS 컬럼 정보
 - category: 구분 (기획, 설계, 개발, QA 등)
@@ -118,7 +129,9 @@ filters에 사용 가능한 특수 키:
 - "delayed": true — 계획완료일이 지났는데 미완료인 항목 (진행중이지만 기한 초과)
 - "schedule_delayed": true — 계획일 대비 실제 종료일이 늦은 항목 (완료 여부와 무관하게 일정 차이 발생)
 - "schedule_gap_min": 숫자 — 종료 지연이 N일 이상인 항목 (예: 3이면 3일 이상 지연)
-- "start_delayed": true — 실제 시작일이 계획 시작일보다 늦은 항목
+- "schedule_early": true — 계획완료일보다 일찍 종료된 항목 (조기완료, end_gap_days < 0). "먼저 끝난", "일찍 종료", "조기완료" 질의에 사용
+- "start_delayed": true — 실제 시작일이 계획 시작일보다 늦은 항목 (지연착수, start_gap_days > 0). "늦게 시작", "착수 지연", "지연착수" 질의에 사용
+- "start_early": true — 실제 시작일이 계획 시작일보다 이른 항목 (선착수, start_gap_days < 0). "선착수", "먼저 착수", "일찍 시작" 질의에 사용. ※ actual_start < plan_start 일 때만 해당하며, 같은 날이면 제외
 - "date_diff": true — 계획일자와 실제일자가 다른 모든 항목 (시작 또는 종료)
 - "detail_contains": "검색어" — 세부항목에 특정 텍스트 포함
 - "progress_lt": 숫자 — 진행률이 특정 값 미만
@@ -126,10 +139,13 @@ filters에 사용 가능한 특수 키:
 - 일반 컬럼명: 해당 값과 일치
 
 ※ 일정 관련 중요 개념:
-- 계획완료일(plan_end) vs 실제종료일(actual_end) 차이 = 일정 지연일수 (양수=지연, 음수=조기완료)
-- 계획시작일(plan_start) vs 실제시작일(actual_start) 차이도 동일하게 계산
+- 계획완료일(plan_end) vs 실제종료일(actual_end) 차이 = end_gap_days (양수=지연, 음수=조기완료)
+- 계획시작일(plan_start) vs 실제시작일(actual_start) 차이 = start_gap_days (양수=지연착수, 음수=선착수)
+- **선착수(早着手)** = actual_start < plan_start (계획보다 먼저 착수) → start_early 사용
+- **지연착수** = actual_start > plan_start (계획보다 늦게 착수) → start_delayed 사용
+- actual_start == plan_start 는 선착수도 지연착수도 아님 (정시 착수, 제외)
 - "일정 지연", "일정 차이", "스케줄 갭" 등의 질의 → schedule_delayed 또는 date_diff 사용
-- 결과에는 start_gap_days, end_gap_days 필드가 포함됨 (지연일수)
+- 결과에는 start_gap_days, end_gap_days 필드가 포함됨
 
 ### add 타입 예시:
 {{
@@ -162,6 +178,31 @@ filters에 사용 가능한 특수 키:
 
 중요: JSON만 응답하세요. 코드블록으로 감싸지 마세요. 날짜는 반드시 YYYY-MM-DD 형식을 사용하세요.
 4/22 같은 형식은 올해 기준으로 2026-04-22 로 변환하세요."""
+
+
+def _get_project_overview(project_id: int) -> str:
+    """프로젝트 메타정보(이름·기간·설명)를 문자열 개요로 반환한다.
+
+    description 은 PM이 기입한 프로젝트 전체 개요·마일스톤·리스크 등을 담는 필드다.
+    AI가 전반 상황을 추론하는 근거로 사용된다.
+    """
+    project = project_model.get_project(project_id)
+    if not project:
+        return ""
+
+    name = (project.get('name') or '').strip()
+    desc = (project.get('description') or '').strip()
+    start = (project.get('start_date') or '').strip()
+    end = (project.get('end_date') or '').strip()
+    period = f"{start or '미정'} ~ {end or '미정'}"
+
+    parts = [f"- 프로젝트명: {name or '(이름 없음)'}", f"- 기간: {period}"]
+    if desc:
+        parts.append("- 개요/마일스톤 (PM 기입):")
+        parts.append(desc)
+    else:
+        parts.append("- 개요/마일스톤: (미기입)")
+    return "\n".join(parts)
 
 
 def _get_items_summary(project_id: int) -> str:
@@ -297,9 +338,19 @@ def _execute_query(project_id: int, filters: dict) -> dict:
                 gap = sched['end_gap_days']
                 if gap is None or gap < int(val):
                     match = False
+            elif key == 'schedule_early':
+                # 계획완료일보다 일찍 종료된 항목 (조기완료)
+                gap = sched['end_gap_days']
+                if gap is None or gap >= 0:
+                    match = False
             elif key == 'start_delayed':
-                # 시작일이 계획보다 늦은 항목
+                # 시작일이 계획보다 늦은 항목 (지연착수)
                 if not sched['has_start_delay']:
+                    match = False
+            elif key == 'start_early':
+                # 시작일이 계획보다 이른 항목 (선착수: actual_start < plan_start)
+                gap = sched['start_gap_days']
+                if gap is None or gap >= 0:
                     match = False
             elif key == 'detail_contains':
                 detail = (item.get('detail', '') or '').lower()
@@ -371,7 +422,8 @@ def _execute_update(project_id: int, row_number: int, data: dict) -> dict:
 def process_command(project_id: int, user_input: str) -> dict:
     """자연어 입력을 파싱하고 실행하여 결과를 반환한다."""
     items_summary = _get_items_summary(project_id)
-    system_prompt = _build_system_prompt(items_summary)
+    project_overview = _get_project_overview(project_id)
+    system_prompt = _build_system_prompt(items_summary, project_overview=project_overview)
     user_prompt = f'질의: "{user_input}"\nJSON 형식으로만 응답하세요. 코드블록으로 감싸지 마세요.'
 
     try:

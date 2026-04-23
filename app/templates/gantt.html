@@ -32,7 +32,7 @@
 
 <script src="{{ url_for('static', filename='js/frappe-gantt.min.js') }}"></script>
 <script>
-    const PROJECT_ID = {{ project_id }};
+    const PROJECT_ID = "{{ project_id }}";
 </script>
 <script src="{{ url_for('static', filename='js/gantt.js') }}"></script>
 {% endblock %}
