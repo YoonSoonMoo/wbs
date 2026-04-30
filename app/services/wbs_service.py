@@ -137,10 +137,19 @@ def get_stats(project_id):
         (project_id,),
     ).fetchone()['cnt']
 
-    avg_progress = db.execute(
-        "SELECT COALESCE(AVG(progress), 0) as avg FROM wbs_item WHERE project_id = ?",
+    # 진행률 = 완료 공수 / 전체 공수 (공수 가중, 프로젝트 통계 모달과 동일 산식)
+    eff = db.execute(
+        """SELECT COALESCE(SUM(effort), 0) as total_effort,
+                  COALESCE(SUM(CASE WHEN progress = 100 THEN effort ELSE 0 END), 0) as completed_effort
+             FROM wbs_item WHERE project_id = ?""",
         (project_id,),
-    ).fetchone()['avg']
+    ).fetchone()
+    total_effort = float(eff['total_effort'] or 0)
+    completed_effort = float(eff['completed_effort'] or 0)
+    avg_progress = (
+        _round_half_up_1(completed_effort / total_effort * 100)
+        if total_effort > 0 else 0.0
+    )
 
     return {
         'total': total,
@@ -148,7 +157,7 @@ def get_stats(project_id):
         'in_progress': in_progress,
         'not_started': not_started,
         'delayed': delayed,
-        'avg_progress': round(avg_progress, 1),
+        'avg_progress': avg_progress,
     }
 
 

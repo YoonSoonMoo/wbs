@@ -95,5 +95,5 @@ def list_project_members(project_id):
 @api_project_bp.route('/users', methods=['GET'])
 @api_login_required
 def list_users():
-    users = get_all_users()
+    users = [u for u in get_all_users() if u['role'] != 'admin']
     return jsonify(users)

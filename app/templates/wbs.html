@@ -102,18 +102,18 @@
       <table id="wbsTable">
         <thead>
           <tr>
-            <th class="col-rownum sortable" data-col="_idx">TID</th>
-            <th class="col-category sortable" data-col="category">구분</th>
-            <th class="col-task sortable" data-col="task_name">Task</th>
-            <th class="col-subtask sortable" data-col="subtask">서브태스크</th>
-            <th class="col-detail">세부 항목</th>
-            <th class="col-assignee sortable" data-col="assignee">담당자</th>
-            <th class="col-plan-start sortable" data-col="plan_start">계획시작</th>
-            <th class="col-plan-end sortable" data-col="plan_end">계획완료</th>
-            <th class="col-act-start">실제시작</th>
-            <th class="col-act-end">실제종료</th>
-            <th class="col-effort sortable" data-col="effort">공수</th>
-            <th class="col-progress sortable" data-col="progress">진행률</th>
+            <th class="col-rownum" id="thTid" title="등록순으로 정렬 초기화">TID</th>
+            <th class="col-category sortable" data-col="category">구분<span class="sort-btn" title="정렬">↕</span></th>
+            <th class="col-task sortable" data-col="task_name">Task<span class="sort-btn" title="정렬">↕</span></th>
+            <th class="col-subtask sortable" data-col="subtask">서브태스크<span class="sort-btn" title="정렬">↕</span></th>
+            <th class="col-detail sortable" data-col="detail">세부 항목<span class="sort-btn" title="정렬">↕</span></th>
+            <th class="col-assignee sortable" data-col="assignee">담당자<span class="sort-btn" title="정렬">↕</span></th>
+            <th class="col-plan-start sortable" data-col="plan_start">계획시작<span class="sort-btn" title="정렬">↕</span></th>
+            <th class="col-plan-end sortable" data-col="plan_end">계획완료<span class="sort-btn" title="정렬">↕</span></th>
+            <th class="col-act-start sortable" data-col="actual_start">실제시작<span class="sort-btn" title="정렬">↕</span></th>
+            <th class="col-act-end sortable" data-col="actual_end">실제종료<span class="sort-btn" title="정렬">↕</span></th>
+            <th class="col-effort sortable" data-col="effort">공수<span class="sort-btn" title="정렬">↕</span></th>
+            <th class="col-progress sortable" data-col="progress">진행률<span class="sort-btn" title="정렬">↕</span></th>
             <th class="col-status">진행상태</th>
           </tr>
         </thead>
@@ -125,6 +125,7 @@
     <div class="footer-bar">
       <div class="footer-left">
         <span>총 행: <strong id="footerRows">0</strong></span>
+        <span id="footerFilterInfo" style="display:none;">필터 행: <strong id="footerFilteredRows">0</strong> · 공수합 <strong id="footerFilteredEffort">0</strong></span>
         <span>마지막 저장: <strong id="footerSaved">-</strong></span>
       </div>
       <div class="storage-indicator">

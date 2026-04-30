@@ -51,6 +51,12 @@ def update_user_role(user_id, new_role):
         raise ValueError(f"잘못된 역할: {new_role}")
     db = get_db()
     db.execute("UPDATE user SET role = ? WHERE id = ?", (new_role, user_id))
+    if new_role == 'admin':
+        # 전역 admin은 모든 프로젝트에서 admin으로 동작 → 멤버 테이블에서 제거
+        db.execute("DELETE FROM project_member WHERE user_id = ?", (user_id,))
+    else:
+        # 일반 권한 변경 시 project_member.role 동기화 (불일치 방지)
+        db.execute("UPDATE project_member SET role = ? WHERE user_id = ?", (new_role, user_id))
     db.commit()
 
 
@@ -77,8 +83,8 @@ _ROLE_LEVEL = {'viewer': 0, 'developer': 1, 'admin': 2}
 def get_project_role(user_id, project_id):
     """프로젝트 내 유효 권한을 반환한다.
 
-    전역 역할(user.role)이 상한으로 작용한다. 즉 전역이 viewer면
-    project_member.role='developer'이어도 viewer로 clamp된다.
+    권한은 유저 관리(user.role)에서 단일 관리한다. project_member 테이블은
+    "이 프로젝트에 어떤 유저가 속해 있는가"만 표현하고, role은 user.role을 그대로 사용한다.
     """
     user = get_user(user_id)
     if not user:
@@ -87,14 +93,12 @@ def get_project_role(user_id, project_id):
         return 'admin'
     db = get_db()
     row = db.execute(
-        "SELECT role FROM project_member WHERE project_id = ? AND user_id = ?",
+        "SELECT 1 FROM project_member WHERE project_id = ? AND user_id = ?",
         (project_id, user_id),
     ).fetchone()
     if not row:
         return None
-    global_lv = _ROLE_LEVEL.get(user['role'], 0)
-    project_lv = _ROLE_LEVEL.get(row['role'], 0)
-    return user['role'] if global_lv < project_lv else row['role']
+    return user['role']
 
 
 def get_project_members(project_id):
@@ -111,12 +115,25 @@ def get_project_members(project_id):
 
 
 def set_project_members(project_id, members):
+    """프로젝트 멤버를 갱신한다.
+
+    member의 role은 받지 않으며(권한은 user.role에서 통합 관리), DB의 project_member.role은
+    user.role을 그대로 복제해 둔다(스키마 NOT NULL 제약 충족 + 데이터 일관성 유지).
+    """
     db = get_db()
     db.execute("DELETE FROM project_member WHERE project_id = ?", (project_id,))
+    seen = set()
     for m in members:
+        uid = m['user_id']
+        if uid in seen:
+            continue
+        seen.add(uid)
+        u = db.execute("SELECT role FROM user WHERE id = ?", (uid,)).fetchone()
+        if not u or u['role'] == 'admin':
+            continue
         db.execute(
             "INSERT INTO project_member (project_id, user_id, role) VALUES (?, ?, ?)",
-            (project_id, m['user_id'], m['role']),
+            (project_id, uid, u['role']),
         )
     db.commit()
 

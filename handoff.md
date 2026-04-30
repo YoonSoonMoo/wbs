@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | https://github.com/YoonSoonMoo/wbs.git |
-| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인, Gantt 담당자 색상/완료 필터/오늘 세로선, 워크쓰루 투어), 2026-04-22 (패스워드 리셋 강제 변경 플로우), 2026-04-23 (API 테스트 스위트, 프로젝트 개요 AI 주입, 주간 통계 공수 기준 진척률, 랜딩 AI 쇼케이스) |
+| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인, Gantt 담당자 색상/완료 필터/오늘 세로선, 워크쓰루 투어), 2026-04-22 (패스워드 리셋 강제 변경 플로우), 2026-04-23 (API 테스트 스위트, 프로젝트 개요 AI 주입, 주간 통계 공수 기준 진척률, 랜딩 AI 쇼케이스), 2026-04-30 (그리드 컬럼 리사이즈, 정렬 버튼 분리, 지연 판단 보정, 푸터 필터 정보, 권한 단일관리, 대시보드 진행률 공수가중 통일) |
 
 ## 2. 기술 스택
 
@@ -80,7 +80,11 @@ wbs/
 │   ├── 001_initial.sql          # 초기 DB 스키마 (project, wbs_item 테이블)
 │   ├── 002_auth.sql             # 인증 스키마 (user, project_member 테이블)
 │   ├── 003_stats.sql            # 통계 스키마 (updated_by, completed_at 컬럼, 완료 트리거)
-│   └── 004_user_mgmt.sql        # 유저 관리 (is_active 컬럼, participant → developer 이관)
+│   ├── 004_user_mgmt.sql        # 유저 관리 (is_active 컬럼, participant → developer 이관)
+│   ├── 005_password_reset.sql   # 임시 비밀번호 강제 변경 플래그 (requires_password_change)
+│   ├── 006_member_admin_role.sql# project_member.role CHECK 제약 확장 (admin 허용)
+│   ├── 007_remove_admin_members.sql # 전역 admin 유저는 project_member에서 제거
+│   └── 008_unify_user_role.sql  # 권한 단일관리: user.role 일괄 정리 + project_member.role 동기화
 ├── instance/                    # SQLite DB 파일 (자동 생성, gitignore 대상)
 ├── tests/                       # pytest API 테스트 스위트 (conftest + 8개 파일, 67건)
 ├── template/
@@ -141,17 +145,19 @@ wbs/
 | password_hash | TEXT NOT NULL | 비밀번호 해시 (werkzeug) |
 | role | TEXT | 전역 역할 (admin/developer/viewer), CHECK 제약 적용 |
 | is_active | INTEGER | 활성 여부 (1=활성, 0=비활성). 비활성 계정은 로그인 차단 |
+| requires_password_change | INTEGER | 임시 비밀번호 강제 변경 플래그 (1=강제) |
 | created_at | TEXT | 생성일시 |
 
-### project_member 테이블 (프로젝트별 권한)
+### project_member 테이블 (프로젝트 멤버 매핑)
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
 | project_id | INTEGER FK | 프로젝트 |
 | user_id | INTEGER FK | 사용자 |
-| role | TEXT | 프로젝트 내 역할 (developer/viewer), CHECK 제약 적용 |
+| role | TEXT | 프로젝트 내 역할 (admin/developer/viewer), CHECK 제약 적용. **2026-04-30부터 user.role과 동기화되며 권한 판정에 사용되지 않음(스키마 NOT NULL 제약 충족용)** |
 
 - PK: (project_id, user_id) 복합키
-- admin 역할 사용자는 project_member 없이도 모든 프로젝트에 접근 가능
+- admin 역할 사용자는 project_member 없이도 모든 프로젝트에 접근 가능 (`007_remove_admin_members.sql` 이후 admin은 project_member에서 제외)
+- **권한 판정은 `user.role` 단일 출처**: project_member는 "이 프로젝트에 어떤 유저가 속해 있는가"만 표현, 역할은 user.role을 그대로 사용
 
 ### schema_version 테이블 (마이그레이션 버전 추적)
 | 컬럼 | 타입 | 설명 |
@@ -206,7 +212,7 @@ wbs/
 | POST | `/api/wbs/items/<id>/move` | 항목 이동 (parent_id, sort_order) |
 | POST | `/api/wbs/<pid>/items/batch` | 일괄 수정 |
 | DELETE | `/api/wbs/<pid>/items` | 프로젝트 WBS 전체 초기화 (developer 이상) |
-| GET | `/api/wbs/<pid>/stats` | 통계 (전체/완료/진행/지연 건수, 평균 진행률) |
+| GET | `/api/wbs/<pid>/stats` | 통계 (전체/완료/진행/지연 건수, 공수 가중 진척률) |
 | GET | `/api/wbs/<pid>/delayed` | 지연 업무 목록 |
 | GET | `/api/wbs/<pid>/dashboard` | 대시보드 종합 데이터 |
 | GET | `/api/wbs/<pid>/schedule-gaps` | 계획일 vs 실제일 차이 분석 (지연일수 포함) |
@@ -221,6 +227,7 @@ wbs/
 | PUT | `/api/users/<id>/role` | 권한 변경 — body `{role: "admin\|developer\|viewer"}` |
 | POST | `/api/users/<id>/reset-password` | 비밀번호 리셋 — body `{password: "..."}` (4자 이상) |
 | PUT | `/api/users/<id>/active` | 활성/비활성 토글 — body `{is_active: 0\|1}` (본인 비활성화 금지) |
+| PUT | `/api/users/me/password` | 본인 비밀번호 변경 — body `{password: "..."}` (4자 이상, `requires_password_change` 플래그 해제) |
 
 ### Import/Export API (`/api/io`)
 | Method | URL | 설명 |
@@ -254,21 +261,16 @@ wbs/
 - `ALTER TABLE ADD COLUMN` 중복 실행 에러 방지 (매 서버 시작 시 안전하게 재실행 가능)
 
 ### 인증/권한: Flask session + werkzeug
-- 외부 라이브러리 추가 없음 (werkzeug는 Flask 내장)
-- `flask.session` 쿠키 기반 세션으로 로그인 상태 관리
-- `werkzeug.security.generate_password_hash` / `check_password_hash`로 비밀번호 해싱
+- `flask.session` 쿠키 기반 세션 + `werkzeug.security`로 비밀번호 해싱 (외부 라이브러리 미추가)
 - 3단계 역할: **admin** (전역 모든 권한) / **developer** (프로젝트 내 읽기/쓰기) / **viewer** (프로젝트 내 읽기 전용)
-- admin은 `project_member` 없이도 모든 프로젝트에 접근 가능
-- developer/viewer는 `project_member`에 등록된 프로젝트만 접근 가능
+- admin은 `project_member` 없이도 모든 프로젝트에 접근 가능. developer/viewer는 `project_member`에 등록된 프로젝트만 접근 가능
 - `is_active=0` 계정은 자격 증명이 맞아도 로그인 차단 (`login_user`가 `_inactive` 플래그 반환 → 라우트가 플래시 메시지 표시)
 - 역할 레벨: `{'viewer': 0, 'developer': 1, 'admin': 2}` (`auth.py` `project_access_required` 비교 기준)
-- **전역 권한이 프로젝트 권한의 상한**: `get_project_role`은 `project_member.role`이 높아도 `user.role`을 초과할 수 없도록 clamp. 예) 전역 viewer가 `project_member.role='developer'`로 등록돼도 effective=`viewer`. 의도는 "관리자가 project_member를 잘못 설정해도 global role이 안전망" 역할
-- **그리드 역할별 UI 게이팅 (admin / developer / viewer)**:
-    - 그리드 CRUD (추가·수정·삭제·드래그·붙여넣기): admin ✓ / developer ✓ / viewer ✗
-    - Gantt 링크: admin ✓ / developer ✓ / viewer ✗ (서버: `/project/<id>/gantt`도 viewer → `/` 리다이렉트)
-    - Excel 붙여넣기 (모달 + 직접 paste): admin ✓ / developer ✓ / viewer ✗
-    - AI Assistant 바: admin ✓만, developer·viewer 숨김 (서버 `POST /api/wbs/<pid>/ai`도 admin 필요)
-    - 메일 전송 버튼: admin ✓만 (서버 `POST /api/wbs/<pid>/send-delay-mail`도 admin 필요)
+- **권한은 user.role(전역) 단일 관리**: `get_project_role`은 admin이면 admin, 그 외에는 project_member 등록 시 `user.role`을 반환. project_member.role 컬럼은 스키마 NOT NULL 제약 충족을 위해 유지되지만 권한 판정에 사용되지 않으며, `set_project_members`/`update_user_role` 양쪽에서 user.role 값으로 자동 동기화. 멤버 추가 UI에 권한 선택 없음 → 권한 변경은 유저 관리 모달(`/api/users/<id>/role`)
+- 임시 비밀번호 강제 변경 — `requires_password_change=1`이면 `base.html`이 모달로 진입을 차단하고 `/api/users/me/password`로 새 비밀번호 입력 강제 (관리자 PW 리셋 시 서버가 10자리 난수 자동 생성·메일 발송)
+- **그리드 역할별 UI 게이팅**:
+    - 그리드 CRUD/Gantt 링크/Excel 붙여넣기: admin ✓ / developer ✓ / viewer ✗
+    - AI Assistant 바, 메일 전송 버튼: admin 전용 (서버 `/api/wbs/<pid>/ai`·`send-delay-mail`도 admin 필요)
     - 오늘의 알림(지연 칩): admin=전체 / developer·viewer=본인 담당(`assignee === USER_NAME`)만
 - 서버 최초 실행 시 기본 관리자 자동 생성: `yoonsm@daou.co.kr` / `zaq12wsx` (이름: 윤순무)
 - 데코레이터 패턴: `@login_required` (페이지), `@api_login_required` (API), `@project_access_required(min_role)`, `@admin_required`
@@ -366,32 +368,20 @@ python run.py
 - [x] 인증/권한 시스템:
   - [x] user 테이블 + project_member 테이블 (002_auth.sql)
   - [x] 로그인/회원가입/로그아웃 페이지 (/login, /register, /logout)
-  - [x] 비밀번호 해싱 (werkzeug)
-  - [x] 세션 기반 인증 (flask.session)
-  - [x] 역할 기반 권한: admin / participant / viewer
+  - [x] 비밀번호 해싱(werkzeug) + 세션 기반 인증(flask.session)
+  - [x] 3단계 역할: admin / developer / viewer (자세한 동작은 §6 참고)
   - [x] 인증 데코레이터 (login_required, api_login_required, project_access_required, admin_required)
   - [x] 모든 페이지/API에 인증 적용 (미인증 시 /login 리다이렉트 또는 401)
-  - [x] admin: 프로젝트 생성/수정/삭제, 멤버 추가/삭제
-  - [x] participant: 프로젝트 내 WBS 항목 추가/수정/삭제
-  - [x] viewer: 읽기 전용 (편집 버튼 숨김, contenteditable 비활성화, API 403)
-  - [x] 프로젝트 생성/수정 시 멤버 할당 UI (참여자/뷰어 역할 선택)
-  - [x] 대시보드: admin만 프로젝트 생성/수정/데이터 초기화/삭제 버튼 표시
+  - [x] 프로젝트 생성/수정 시 멤버 할당 UI (admin 전용, 권한 선택은 유저 관리에서 일원화)
   - [x] 데이터 초기화 버튼: 프로젝트 목록에서 프로젝트별 WBS 전체 삭제 (DELETE /api/wbs/<pid>/items)
   - [x] 초기 관리자 자동 생성 (yoonsm@daou.co.kr / zaq12wsx)
-  - [x] 권한 동작 검증 완료 (admin 로그인, viewer 403 제한)
 - [x] 네비게이션 UI 개선:
-  - [x] 대시보드(프로젝트 리스트) 페이지: topbar에서 "대시보드" 메뉴 삭제
-  - [x] WBS 페이지 top-bar: "WBS" 문자를 프로젝트명으로 대체 (예: 택배허브 시스템 구축)
-  - [x] WBS 페이지 top-bar: 로그인 유저 옆에 "📋 대시보드" 버튼 추가 (대시보드로 이동)
-  - [x] Gantt 페이지: topbar에 프로젝트명 표시 (WBS와 동일)
+  - [x] WBS·Gantt 페이지 top-bar에 프로젝트명 표시 + 로그인 유저 옆 "📋 대시보드" 버튼 추가
 - [x] 버그수정 및 개선 (2026-04-14):
   - [x] 드래그앤드롭 순서 저장 수정 — get_flat_list가 sort_order 기준 정렬하도록 변경 (기존 wbs_code 텍스트 정렬 → sort_order)
   - [x] 행 삽입/복제 후 saveSortOrder() 호출 추가 — 삽입 위치가 리로드 후에도 유지
-  - [x] Gantt 차트 에러 수정 — frappe-gantt 0.6.1에 한국어 로케일 미포함으로 language:'ko' 사용 시 에러 발생, 로컬 번들에 ko 로케일 패치
-  - [x] Gantt 차트 한국어 월 표시 — CDN → 로컬 전환, 1월~12월 한국어 표기
-  - [x] 날짜 컬럼 폭 확장 — 71px → 73px (4개 날짜 컬럼)
-  - [x] 날짜 표시 축약 — yyyy-MM-dd → yy-MM-dd 표시 (DB 저장은 yyyy-MM-dd 유지)
-  - [x] openpyxl 미설치 해결 — Excel 다운로드 ModuleNotFoundError 수정
+  - [x] Gantt 차트 한국어 로케일 — frappe-gantt 0.6.1을 CDN → 로컬 전환 + ko 로케일 패치 (language:'ko' 사용 시 에러 해결)
+  - [x] 날짜 표시 축약 — 그리드에서 yy-MM-dd로 표시, DB는 yyyy-MM-dd 유지
 - [x] AI 어시스턴트 및 UI 개선 (2026-04-15):
   - [x] AI 어시스턴트 도입 — `app/services/ai_assistant.py` (Claude CLI subprocess, 자연어 → 조회/추가/수정/삭제)
   - [x] AI 입력바 UI — 알림 섹션 아래, "AI Assistant" 레이블, Enter 전송, 결과 그리드 필터 연동
@@ -400,7 +390,6 @@ python run.py
   - [x] 지연 판단 로직 개선 — 실제종료일 미기입 시 미완료로 판단 (현재일 - 계획완료일로 계산)
   - [x] AI 결과 시인성 개선 — 상태 이모지, 섹션 구분 표시 (심플 버전)
   - [x] 툴바 UI 개선 — "빠른검색" 레이블 추가, 검색창 폭 확장, "완료 포함" 체크박스, "나만의 태스크" 체크박스, "행 추가" 버튼 위치 이동
-  - [x] "AI Assistant" 문구 변경 — AI 바 레이블 텍스트 통일
   - [x] 오늘의 알림 개선 — 세부항목명 12자 초과 시 `...` 처리, 담당자명 칩에 함께 표시
   - [x] 행번호(#) → 고유 ID 표시 — 화면 순번 대신 DB `item.id` 표시로 항목 식별 명확화
   - [x] 통계 카운트 버그 수정 — 세 가지 버그 수정:
@@ -461,13 +450,12 @@ python run.py
   - [x] `dashboard.js` 유저 관리 로직 — `loadUserMgmtList`, `changeUserRole`, `resetUserPw`, `toggleUserActive`. 헤더에 "전체 N명 · 활성 N명 · 비활성 N명" 카운트 표시
   - [x] 유저 관리 모달 CSS — `app/static/css/style.css`의 `.user-mgmt-modal`/`.user-mgmt-tbl`/`.user-role-sel`/`.user-badge`/`.user-action-btns` (이름 `white-space:nowrap`, hover, danger 버튼 variant 등)
   - [x] `'participant'` 문자열 일괄 교체 → `'developer'` (`app/routes/api_wbs.py`, `app/routes/api_import_export.py`, `app/static/js/dashboard.js` 멤버 드롭다운. UI 라벨 "참여자" → "개발자")
-  - [x] 전체 유저 패스워드 일괄 `local8707!`로 초기화 (백업: `instance/wbs.db.bak-20260417-133255`)
 
-- [x] 그리드 역할별 UI 게이팅 + 권한 clamp 버그 수정 (2026-04-17):
+- [x] 그리드 역할별 UI 게이팅 + 권한 정책 정비 (2026-04-17):
   - [x] `wbs.html` 템플릿 게이팅 — Gantt 링크/AI 바/메일 버튼을 `{% if project_role == 'admin' %}`로 감쌈. Excel 붙여넣기는 기존 viewer 차단 유지
   - [x] `grid.js` 로직 — `updateAlerts()`가 비-admin에게 본인 담당 태스크만 필터(`r.assignee === USER_NAME`). `sendDelayMail()`·`sendAiQuery()` admin 외 토스트 후 조기 리턴. paste 리스너 viewer 조기 리턴
   - [x] 서버 방어 — `send-delay-mail` 및 `/ai` 엔드포인트 `project_access_required('admin')`로 상향. `main.py gantt_view`에서 viewer 요청 시 `/`로 리다이렉트
-  - [x] **권한 clamp 버그 수정** — `get_project_role`이 전역 권한을 상한으로 clamp하도록 변경. 이전에는 `project_member.role`이 전역 권한을 초과하면 viewer 유저가 editor 권한을 갖게 되던 문제(`project_member.role='developer'`로 할당된 전역 viewer가 그리드 CRUD 가능) 해결
+  - [x] 권한 clamp 정책 도입 — `get_project_role`이 전역 권한을 상한으로 clamp (project_member.role 단독 부여로 권한 상승 차단). _※ 2026-04-30 user.role 단일관리 정책으로 대체됨_
 
 - [x] 메인 라우트 구조 변경 + 랜딩 페이지 추가 (2026-04-17):
   - [x] `/` 경로 분기 — 비로그인: `landing.html` 렌더 / 로그인: `/dashboard`로 리다이렉트
@@ -476,16 +464,11 @@ python run.py
   - [x] Features 섹션 헤드라인 교체 — "현업에서 필요한 모든 기능" → "계획은 바뀌어도, WBS는 흔들리지 않게" (프로젝트 변수에 유연 대응하는 강점 강조)
 
 - [x] 회원가입 비밀번호 확인 필드 (2026-04-17):
-  - [x] `register.html` — `password_confirm` 입력 추가. 실시간 일치 메시지(`✓ 일치 / ✗ 불일치`) + 제출 시 JS 가드
-  - [x] `auth.py register()` — 불일치·4자 미만·누락 각각 플래시. 검증 통과 시에만 `register_user()` 호출
-  - [x] CSS `.pw-match-msg` / `.ok` / `.err` 추가
+  - [x] `register.html`에 `password_confirm` 입력 + 실시간 일치 메시지(✓/✗). 서버측 `auth.py register()`도 불일치·4자 미만·누락 검증
 
 - [x] 로고 및 파비콘, 브랜드 스타일 (2026-04-17):
-  - [x] `app/static/img/logo.png` 추가. 모든 템플릿 `<head>`에 `<link rel="icon" type="image/png">` 적용
-  - [x] 탑바 로고 이미지화 (`base.html`, `.logo-img` height 30px)
-  - [x] 랜딩 페이지 로고 이미지 삭제 → "Easy WBS" 그라디언트 텍스트(`.landing-logo-brand` 34px 헤더/26px 푸터, 파랑→보라→밝은파랑 그라디언트) + "Provided by Claude" pill 배지(`.landing-logo-credit` monospace, uppercase, letter-spacing)
-  - [x] 로그인 페이지 로고 이미지 삭제 → 랜딩과 동일 브랜드 텍스트 + 배지 (`auth-brand` 컨테이너, 30px)
-  - [x] 회원가입 페이지는 기존 로고 이미지 유지(필요 시 동일 교체 대기)
+  - [x] `app/static/img/logo.png` 추가, 모든 템플릿 파비콘 적용. 대시보드 탑바는 로고 이미지 사용
+  - [x] 랜딩·로그인 페이지는 "Easy WBS" 그라디언트 텍스트(파랑→보라→밝은파랑) + "Provided by Claude" pill 배지로 브랜드 표현
 
 - [x] Gantt 차트 개선 (2026-04-17):
   - [x] 정렬 기준을 그리드와 동일하게 `sort_order`로 변경 — `dashboard_service.get_timeline_data()` `ORDER BY wbs_code` → `ORDER BY sort_order`. SELECT에 `subtask`, `detail`, `sort_order` 추가
@@ -498,19 +481,11 @@ python run.py
   - [x] CSS 추가 — `.gantt-toggle`, `.gantt-legend`, `.bar-wrapper.gantt-done`, `.gantt-today-line`, `.gantt-today-label`, 12개 `.bar-wrapper.gantt-assignee-{N}` 색상 규칙
 
 - [x] 워크쓰루 투어 (2026-04-17):
-  - [x] 새 모듈 `app/static/js/walkthrough.js` — 외부 의존성 없는 경량 구현 (~7KB, IIFE로 캡슐화, `window.startWalkthrough` 전역만 노출)
-  - [x] 첫 방문 자동 실행 — `localStorage` 키 `wbs_tour_done_{USER_NAME}`로 유저별 1회성. 플래그 없으면 DOMContentLoaded 후 1.2초 지연으로 자동 시작
-  - [x] 수동 재실행 버튼 — `wbs.html` 탑바 우측 끝에 `❓ 가이드` 버튼 추가 (localStorage 플래그 제거 후 강제 시작)
-  - [x] 5단계 투어 — 숨김 요소(예: 일반 유저의 AI 바)는 `offsetParent` 체크로 자동 건너뜀
-    1. 상단 기능 버튼 (첫 스텝, 6개 버튼 좌→우 순서로 상세 설명)
-    2. 오늘의 알림
-    3. AI Assistant (admin만)
-    4. 빠른검색·필터
-    5. 그리드 편집 (`maxHeight: 200`으로 스포트라이트 세로 제한 → 툴팁 공간 확보)
-  - [x] UI 디자인 — 스포트라이트는 파란 테두리(`#4f6ef7`) + 광원 효과 + `box-shadow` 9999px spread로 외부 어둡게. 툴팁은 420px 화이트 카드, ✨ 타이틀 아이콘, 진행 표시 `1/5` + 이전/다음/건너뛰기, pop-in 애니메이션
-  - [x] 조작 — 이전/다음/건너뛰기/완료 버튼, ESC 키, 창 리사이즈 시 자동 재배치
-  - [x] 탑바 기능 버튼 순서 정리 — `❓ 가이드` 버튼을 맨 오른쪽으로 이동(대시보드→통계→CSV→Excel→Excel 붙여넣기→Gantt→가이드). 워크쓰루의 첫 스텝 설명도 `<ul class="tour-list">` 형태로 좌→우 순서와 일치시켜 재정렬
-  - [x] CSS 추가 — `wbs.css`의 `.tour-overlay`, `.tour-spotlight`, `.tour-tooltip`, `.tour-title/text/meta/progress/buttons/btn`, `.tour-list`, `@keyframes tour-fade-in/pop-in`
+  - [x] 새 모듈 `app/static/js/walkthrough.js` — 외부 의존성 없는 경량 구현(~7KB, IIFE로 캡슐화, `window.startWalkthrough`만 전역 노출)
+  - [x] 첫 방문 자동 실행 — `localStorage` 키 `wbs_tour_done_{USER_NAME}`로 유저별 1회성. 탑바 `❓ 가이드` 버튼으로 수동 재실행
+  - [x] 5단계 투어 — 숨김 요소(예: 일반 유저의 AI 바)는 `offsetParent` 체크로 자동 건너뜀: ①상단 기능 버튼 ②오늘의 알림 ③AI Assistant(admin만) ④빠른검색·필터 ⑤그리드 편집
+  - [x] UI — 스포트라이트(파란 테두리 + 외부 dimming) + 420px 툴팁 카드(진행 표시·이전/다음/건너뛰기·ESC 키), 창 리사이즈 시 자동 재배치
+  - [x] 탑바 기능 버튼 순서 정리 — `❓ 가이드` 버튼을 맨 오른쪽으로 이동(대시보드→통계→CSV→Excel→Excel 붙여넣기→Gantt→가이드)
 
 - [x] 패스워드 리셋 및 강제 변경 플로우 개선 (2026-04-22):
   - [x] 마이그레이션 `005_password_reset.sql` — `user` 테이블에 `requires_password_change` 플래그 추가
@@ -552,9 +527,45 @@ python run.py
     - CSS: `.landing-ai-section`(좌상단 라디얼 그라디언트), `.landing-ai`(2-column minmax), `.landing-ai-chip`(hover 그림자), `.landing-ai-frame`(큰 그림자), 960px 이하 1열 반응형
     - 히어로 서브 카피에 "PM의 판단을 돕는 AI 어시스턴트" 그라디언트 강조 추가, `.accent-soft` 공용 클래스화
   - [x] **보조 개선**:
-    - `run.py` — `app.run(threaded=True)` 로 개발 서버 멀티스레드화. AI 어시스턴트 동시성의 단기 개선(복수 사용자 동시 질의 시 순차 대기 완화)
-    - `app/static/js/grid.js` — AI 지연 요약 칩의 라벨 우선순위를 `detail || subtask || task_name` 로 바꾸고 12자 절단(...)으로 가독성 개선
-    - `app/templates/gantt.html` — `PROJECT_ID`를 정수가 아닌 문자열로 직렬화 (`{{ project_id }}` → `"{{ project_id }}"`)하여 JS 측 타입 일관성 확보
+    - `run.py` — `app.run(threaded=True)`로 개발 서버 멀티스레드화 (AI 어시스턴트 동시성 단기 개선)
+    - `app/static/js/grid.js` — AI 지연 요약 칩 라벨 우선순위를 `detail || subtask || task_name`로 변경하고 12자 절단
+
+- [x] 그리드 UX·권한 단일관리·진행률 통일 (2026-04-30):
+  - [x] **컬럼 폭 드래그 리사이즈** (`app/static/css/wbs.css`, `app/static/js/grid.js`):
+    - 헤더 우측 경계(`right:-3px`, 6px 폭)에 `.col-resizer` 핸들 동적 부착. mousedown→mousemove로 폭 조정, mouseup에 localStorage 저장 (`wbs_col_widths_v1_p<PROJECT_ID>`, 새로고침·재방문 시 복원)
+    - TID(`col-rownum`) 컬럼만 핸들 미부착 → 리사이즈 비활성
+    - 정렬 클릭/행 드래그앤드롭과 충돌 방지 위해 핸들 mousedown/click에 `stopPropagation`
+    - 최소 폭 30px 클램프, 리사이즈 중 `body.is-col-resizing`로 전역 col-resize 커서·텍스트선택 차단
+  - [x] **정렬 트리거를 별도 ↕ 버튼으로 분리** (`app/templates/wbs.html`, `wbs.css`, `grid.js`):
+    - 정렬 가능 헤더에 `<span class="sort-btn">↕</span>` 추가, 버튼 클릭에서만 정렬(asc→desc 토글)
+    - `th.sortable`/`col-rownum`의 `cursor:pointer`·hover 배경·`::after ▲/▼` 인디케이터 제거 → 헤더 본문 클릭/드래그 영역과 정렬 영역 분리
+    - `updateSortHeaders()`가 버튼 텍스트를 ↕→▲→▼로 토글
+    - **정렬 가능 컬럼 보강**: 세부항목·실제시작·실제종료 추가 (각각 `data-col="detail"/"actual_start"/"actual_end"`). TID는 정렬 비활성으로 변경
+    - **TID 헤더 클릭 → 등록순 정렬 리셋**: `sortCol=null; sortDir='asc'` → 모든 sort-btn 아이콘 ↕로 복귀, `data` 배열 원본 순서(드래그 정렬 결과)로 재렌더. 우측 핸들 영역 클릭 시 리셋이 트리거되지 않도록 가드(`e.target.closest('.col-resizer')` 체크) + `title="등록순으로 정렬 초기화"` 툴팁
+  - [x] **알림 지연 판단 보정** (`grid.js updateAlerts()`):
+    - 기존 버그: `today = new Date()`(시각 미정규화) + `new Date(plan_end)`(YYYY-MM-DD를 UTC 자정으로 파싱) 조합으로 KST 환경에서 `plan_end == today`인 항목이 "오늘의 알림"에 잘못 포함됨
+    - 수정: `today.setHours(0,0,0,0)` 정규화 + plan_end 파싱에 `'T00:00:00'` 접미사 명시 → `plan_end < today`(strictly) 만 지연으로 분류. 행 강조(`renderGrid`)·통계 카드(`updateStats`)·백엔드 SQL과 동일 기준
+    - 예) 계획완료 4/30, 오늘 4/30 → 지연 아님 ✓
+  - [x] **푸터 필터 정보 표시** (`wbs.html`, `grid.js renderGrid()`):
+    - 풋터에 `#footerFilterInfo` span 신설 — 빠른검색·완료 포함·나만의 태스크·AI 필터 중 하나라도 적용돼 `filtered.length !== data.length`이면 "필터 행: N · 공수합 X" 표시. 미적용 시 숨김
+    - 공수합은 `parseFloat(effort)` 합산 후 `Math.round(x*10)/10`로 소수 1자리 반올림 (정수면 정수)
+  - [x] **권한 관리 단일화 (user.role 단일 출처)** — 프로젝트 멤버 추가 UI에서 role 선택 제거, 유저 관리(전역 role)로 통합:
+    - `dashboard.js addMemberRow()`/`collectMembers()` — `<select class="member-role">` 삭제, 유저 셀렉트만 전송. 기존 프로젝트 편집 시 멤버 로드도 role 인자 없이 `addMemberRow(members[i].id)` 호출
+    - `auth_service.py get_project_role()` — admin이면 admin, 그 외에는 project_member 등록 여부 확인 후 `user.role`을 그대로 반환 (이전: `project_member.role` clamp 방식)
+    - `set_project_members()` — 클라이언트 role 무시, 등록 시 `user.role`을 자동 복제 (스키마 NOT NULL 제약 충족 + 데이터 일관성)
+    - `update_user_role()` — admin 승격 시 해당 유저의 `project_member` 행 일괄 삭제, 그 외에는 `project_member.role`을 새 role로 동기화 (이후 권한 변경이 멤버 테이블과 자동 일치)
+  - [x] **마이그레이션 `008_unify_user_role.sql`**:
+    - `UPDATE user SET role = 'developer' WHERE email != 'yoonsm@daou.co.kr'` — 윤순무(admin) 외 모든 유저(기존 admin 1명 → developer 강등, 기존 viewer 8명 → developer 승격) 통일
+    - `UPDATE project_member SET role = (SELECT role FROM user WHERE user.id = project_member.user_id)` — 기존 `project_member.role`이 `user.role`과 불일치한 9건(예: chkim710 user=viewer/pm=developer) 정리
+    - 적용 후: admin 1명(윤순무) + developer 10명, project_member 9건 모두 user.role과 일치
+  - [x] **선행 마이그레이션 정리** (이전 세션 산출물 추적):
+    - `006_member_admin_role.sql` — `project_member.role` CHECK 제약을 `developer/viewer` → `admin/developer/viewer`로 확장(테이블 재생성)
+    - `007_remove_admin_members.sql` — 전역 admin 유저는 모든 프로젝트에서 admin이므로 `project_member`에서 제거(PK 충돌·UI dropdown 누락 회피)
+  - [x] **대시보드 프로젝트 진행률을 공수 가중 산식으로 통일** (`app/services/wbs_service.py get_stats()`):
+    - 기존 `AVG(progress)` (단순 산술 평균, 대공수/소공수 가중치 동일) → `SUM(progress=100 태스크의 effort) / SUM(effort) × 100` (공수 가중)
+    - `_round_half_up_1` 사사오입 헬퍼 적용 → 프로젝트 통계 모달 `overview.progress_rate`(`get_weekly_stats` 내 동일 산식)와 표시 값까지 일치
+    - 검증: delivery-hub 8.0% → 8.8%(61h/692h), WBS-TEST 11.5% → 12.2%(44h/362h)
+    - 프론트(`dashboard.js`)는 `stats.avg_progress`를 그대로 사용하므로 추가 변경 불필요
 
 ## 9. 미구현 / 향후 작업
 

@@ -722,6 +722,12 @@ body {
 .pw-match-msg.err { color: #DC2626; }
 
 /* ===== Member Assignment ===== */
+#member-list {
+    max-height: 200px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
 .member-row {
     display: flex;
     align-items: center;

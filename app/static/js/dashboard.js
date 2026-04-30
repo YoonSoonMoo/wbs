@@ -85,7 +85,7 @@ async function editProject(id) {
         // 기존 멤버 로드
         var members = await API.get('/api/projects/' + id + '/members');
         for (var i = 0; i < members.length; i++) {
-            addMemberRow(members[i].id, members[i].role);
+            addMemberRow(members[i].id);
         }
 
         document.getElementById('project-modal').style.display = 'flex';
@@ -163,9 +163,17 @@ function clearMemberList() {
     if (list) list.innerHTML = '';
 }
 
-function addMemberRow(selectedUserId, selectedRole) {
+function addMemberRow(selectedUserId) {
     var list = document.getElementById('member-list');
     if (!list) return;
+
+    if (selectedUserId) {
+        var found = false;
+        for (var k = 0; k < availableUsers.length; k++) {
+            if (availableUsers[k].id === selectedUserId) { found = true; break; }
+        }
+        if (!found) return;
+    }
 
     var row = document.createElement('div');
     row.className = 'member-row';
@@ -177,11 +185,8 @@ function addMemberRow(selectedUserId, selectedRole) {
         userOptions += '<option value="' + u.id + '"' + sel + '>' + escapeHtml(u.name) + ' (' + escapeHtml(u.email) + ')</option>';
     }
 
-    var partSel = (!selectedRole || selectedRole === 'developer') ? ' selected' : '';
-    var viewSel = (selectedRole === 'viewer') ? ' selected' : '';
-
-    row.innerHTML = '<select class="member-user" style="flex:2;">' + userOptions + '</select>' +
-        '<select class="member-role" style="flex:1;"><option value="developer"' + partSel + '>개발자</option><option value="viewer"' + viewSel + '>뷰어</option></select>' +
+    // 권한은 유저 관리(전역 role)에서 통합 관리되므로 멤버 행에서는 user 선택만 받는다.
+    row.innerHTML = '<select class="member-user" style="flex:1;">' + userOptions + '</select>' +
         '<button type="button" class="btn-remove" onclick="this.parentElement.remove()">&times;</button>';
 
     list.appendChild(row);
@@ -192,12 +197,8 @@ function collectMembers() {
     var members = [];
     for (var i = 0; i < rows.length; i++) {
         var userId = rows[i].querySelector('.member-user');
-        var role = rows[i].querySelector('.member-role');
-        if (userId && role) {
-            members.push({
-                user_id: parseInt(userId.value),
-                role: role.value,
-            });
+        if (userId) {
+            members.push({ user_id: parseInt(userId.value) });
         }
     }
     return members;

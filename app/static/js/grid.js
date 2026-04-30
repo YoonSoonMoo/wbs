@@ -115,6 +115,26 @@ function renderGrid() {
     updateAlerts();
     updateSelectionUI();
     document.getElementById('footerRows').textContent = data.length;
+
+    // 필터 적용 시 표시 행수 및 공수합
+    var filterInfo = document.getElementById('footerFilterInfo');
+    if (filterInfo) {
+        var isFiltered = filtered.length !== data.length;
+        if (isFiltered) {
+            var sumEffort = 0;
+            for (var fi = 0; fi < filtered.length; fi++) {
+                var ev = parseFloat(filtered[fi].effort);
+                if (!isNaN(ev)) sumEffort += ev;
+            }
+            // 소수점 1자리까지 표시 (정수면 정수로)
+            var rounded = Math.round(sumEffort * 10) / 10;
+            document.getElementById('footerFilteredRows').textContent = filtered.length;
+            document.getElementById('footerFilteredEffort').textContent = rounded;
+            filterInfo.style.display = '';
+        } else {
+            filterInfo.style.display = 'none';
+        }
+    }
 }
 
 // ===== Stats =====
@@ -149,7 +169,8 @@ function updateStats(f) {
 
 // ===== Alerts =====
 function updateAlerts() {
-    var today = new Date();
+    // 지연 판단: plan_end가 오늘보다 이전(<)인 경우만 지연. 오늘이면 지연 아님.
+    var today = new Date(); today.setHours(0, 0, 0, 0);
     var delayed = [];
     var onlyMine = (USER_ROLE !== 'admin'); // admin 외에는 본인 담당 태스크만 표시
     for (var i = 0; i < data.length; i++) {
@@ -157,9 +178,9 @@ function updateAlerts() {
         if ((parseFloat(r.progress) || 0) >= 100 || !r.plan_end) continue;
         if (onlyMine && r.assignee !== USER_NAME) continue;
         var ed;
-        // YYYY-MM-DD format
+        // YYYY-MM-DD format (로컬 자정 기준 파싱)
         if (r.plan_end.indexOf('-') >= 0) {
-            ed = new Date(r.plan_end);
+            ed = new Date(r.plan_end + 'T00:00:00');
         }
         // MM/DD format
         else if (r.plan_end.indexOf('/') >= 0) {
@@ -169,6 +190,7 @@ function updateAlerts() {
             if (isNaN(m) || isNaN(d)) continue;
             ed = new Date(today.getFullYear(), m, d);
         } else continue;
+        if (isNaN(ed)) continue;
 
         if (ed < today) {
             var label = r.detail || r.subtask || r.task_name || '';
@@ -456,15 +478,21 @@ function pasteIntoGrid(text, cell) {
 function updateSortHeaders() {
     document.querySelectorAll('th.sortable').forEach(function(th) {
         th.classList.remove('sort-asc', 'sort-desc');
+        var btn = th.querySelector('.sort-btn');
+        if (btn) btn.textContent = '↕';
         if (th.dataset.col === sortCol) {
             th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+            if (btn) btn.textContent = sortDir === 'asc' ? '▲' : '▼';
         }
     });
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('th.sortable').forEach(function(th) {
-        th.addEventListener('click', function() {
+    document.querySelectorAll('th.sortable .sort-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var th = btn.closest('th');
+            if (!th) return;
             var c = th.dataset.col;
             if (sortCol === c) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
             else { sortCol = c; sortDir = 'asc'; }
@@ -472,6 +500,16 @@ document.addEventListener('DOMContentLoaded', function() {
             renderGrid();
         });
     });
+    var tidTh = document.getElementById('thTid');
+    if (tidTh) {
+        tidTh.addEventListener('click', function(e) {
+            if (e.target.closest('.col-resizer')) return;
+            sortCol = null;
+            sortDir = 'asc';
+            updateSortHeaders();
+            renderGrid();
+        });
+    }
 });
 
 // ===== Drag & Drop Row Reorder =====
@@ -1035,8 +1073,60 @@ function closeAiResult() {
     document.getElementById('aiResult').style.display = 'none';
 }
 
+// ===== Column Resize =====
+function initColumnResize() {
+    var STORAGE_KEY = 'wbs_col_widths_v1_p' + (typeof PROJECT_ID !== 'undefined' ? PROJECT_ID : 'default');
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; } catch (e) { saved = {}; }
+
+    var headers = document.querySelectorAll('#wbsTable thead th');
+    headers.forEach(function(th) {
+        if (th.classList.contains('col-rownum')) return; // TID 컬럼 제외
+        var m = (th.className || '').match(/col-[a-z-]+/);
+        var key = m ? m[0] : null;
+        if (!key) return;
+        if (saved[key]) th.style.width = saved[key] + 'px';
+
+        var resizer = document.createElement('div');
+        resizer.className = 'col-resizer';
+        th.appendChild(resizer);
+
+        resizer.addEventListener('click', function(e) { e.stopPropagation(); });
+        resizer.addEventListener('mousedown', function(e) {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            var startX = e.clientX;
+            var startW = th.getBoundingClientRect().width;
+            resizer.classList.add('resizing');
+            document.body.classList.add('is-col-resizing');
+
+            function onMove(ev) {
+                var newW = Math.max(30, startW + (ev.clientX - startX));
+                th.style.width = newW + 'px';
+            }
+            function onUp() {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                resizer.classList.remove('resizing');
+                document.body.classList.remove('is-col-resizing');
+                var w = parseInt(th.style.width, 10);
+                if (w > 0) {
+                    saved[key] = w;
+                    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(saved)); } catch (e) {}
+                }
+            }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    });
+}
+
 // ===== Init =====
-document.addEventListener('DOMContentLoaded', loadItems);
+document.addEventListener('DOMContentLoaded', function() {
+    initColumnResize();
+    loadItems();
+});
 
 // ===== Stats Modal =====
 var STATS_COLORS = ['#4f6ef7','#7c5ef7','#18a058','#f07c3e','#e6a817','#e84040','#0ea882','#0ea5e9','#8b5cf6','#ec4899','#14b8a6','#f97316'];
