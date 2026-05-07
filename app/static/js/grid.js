@@ -119,7 +119,10 @@ function renderGrid() {
     // 필터 적용 시 표시 행수 및 공수합
     var filterInfo = document.getElementById('footerFilterInfo');
     if (filterInfo) {
-        var isFiltered = filtered.length !== data.length;
+        // 빠른검색·나만의·AI 필터 중 하나라도 활성이면 length 비교와 무관하게 표시.
+        // (완료 포함 체크 시 length가 전체와 같아져도 검색 결과 합계는 보여야 한다)
+        var hasActiveFilter = !!sv || showMine || (aiFilterIds && aiFilterIds.length > 0);
+        var isFiltered = hasActiveFilter || filtered.length !== data.length;
         if (isFiltered) {
             var sumEffort = 0;
             for (var fi = 0; fi < filtered.length; fi++) {
