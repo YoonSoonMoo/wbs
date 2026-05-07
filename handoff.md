@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | https://github.com/YoonSoonMoo/wbs.git |
-| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인, Gantt 담당자 색상/완료 필터/오늘 세로선, 워크쓰루 투어), 2026-04-22 (패스워드 리셋 강제 변경 플로우), 2026-04-23 (API 테스트 스위트, 프로젝트 개요 AI 주입, 주간 통계 공수 기준 진척률, 랜딩 AI 쇼케이스), 2026-04-30 (그리드 컬럼 리사이즈, 정렬 버튼 분리, 지연 판단 보정, 푸터 필터 정보, 권한 단일관리, 대시보드 진행률 공수가중 통일) |
+| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인, Gantt 담당자 색상/완료 필터/오늘 세로선, 워크쓰루 투어), 2026-04-22 (패스워드 리셋 강제 변경 플로우), 2026-04-23 (API 테스트 스위트, 프로젝트 개요 AI 주입, 주간 통계 공수 기준 진척률, 랜딩 AI 쇼케이스), 2026-04-30 (그리드 컬럼 리사이즈, 정렬 버튼 분리, 지연 판단 보정, 푸터 필터 정보, 권한 단일관리, 대시보드 진행률 공수가중 통일), 2026-05-07 (Gantt 일자 정규화 버그 수정) |
 
 ## 2. 기술 스택
 
@@ -84,7 +84,8 @@ wbs/
 │   ├── 005_password_reset.sql   # 임시 비밀번호 강제 변경 플래그 (requires_password_change)
 │   ├── 006_member_admin_role.sql# project_member.role CHECK 제약 확장 (admin 허용)
 │   ├── 007_remove_admin_members.sql # 전역 admin 유저는 project_member에서 제거
-│   └── 008_unify_user_role.sql  # 권한 단일관리: user.role 일괄 정리 + project_member.role 동기화
+│   ├── 008_unify_user_role.sql  # 권한 단일관리: user.role 일괄 정리 + project_member.role 동기화
+│   └── 009_normalize_dates.sql  # 'YY-MM-DD'로 잘못 저장된 일자 컬럼을 '20YY-MM-DD'로 일괄 정정
 ├── instance/                    # SQLite DB 파일 (자동 생성, gitignore 대상)
 ├── tests/                       # pytest API 테스트 스위트 (conftest + 8개 파일, 67건)
 ├── template/
@@ -566,6 +567,19 @@ python run.py
     - `_round_half_up_1` 사사오입 헬퍼 적용 → 프로젝트 통계 모달 `overview.progress_rate`(`get_weekly_stats` 내 동일 산식)와 표시 값까지 일치
     - 검증: delivery-hub 8.0% → 8.8%(61h/692h), WBS-TEST 11.5% → 12.2%(44h/362h)
     - 프론트(`dashboard.js`)는 `stats.avg_progress`를 그대로 사용하므로 추가 변경 불필요
+
+- [x] Gantt 일자 정규화 버그 수정 (2026-05-07):
+  - **증상**: Gantt 차트에 일부 행(3개)만 보이고 대다수 태스크가 화면 밖으로 사라짐
+  - **원인**: `delivery-hub`의 10개 행 일자 컬럼에 `YY-MM-DD` 형식(예: `26-04-29`)이 섞여 저장돼 있었음. Frappe Gantt 의 파서가 `parseInt('26')` → `new Date(26, ...)` 로 처리하는데 JS Date 생성자가 0–99 연도를 1900 기준으로 해석해 **1926년**이 됨. 결과적으로 `gantt_start`가 1926년으로 끌려가 차트 가로 폭이 100년에 걸쳐지고(`set_scroll_position()`이 가장 오래된 시작일로 스크롤), 2026년 막대 대부분이 화면 오른쪽 멀리 밀려남
+  - **데이터 정정** — 마이그레이션 `009_normalize_dates.sql`:
+    - `plan_start/plan_end/actual_start/actual_end` 4개 컬럼에서 `GLOB '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`로 매칭되는 값에 `'20'` 접두 일괄 UPDATE
+    - 적용 후 잘못된 행 0건 확인 (delivery-hub 10건 정상 정규화)
+  - **백엔드 정규화 추가** — `app/models/wbs_item.py`:
+    - `DATE_FIELDS = {'plan_start','plan_end','actual_start','actual_end'}` 상수, `_YY_DATE_RE = re.compile(r'^(\d{2})-(\d{2})-(\d{2})$')`
+    - `_normalize_date(value)` — 정규식 매칭 시 `'20' + value` 반환, 그 외엔 원본
+    - `_norm_field(key, value)` — `_trim` → 일자 컬럼이면 `_normalize_date` 추가 적용
+    - `create_item`/`update_item`이 일자 컬럼에 한해 `_norm_field`를 거치도록 변경 (CSV/Excel import 도 `create_item` 경유이므로 자동 보호)
+  - 프론트(`grid.js`)는 기존에도 focusout/paste 시 정규화하지만 누락 경로(예: 일부 paste 케이스)가 있었음. 이제 백엔드에서 마지막 방어선 확보
 
 ## 9. 미구현 / 향후 작업
 

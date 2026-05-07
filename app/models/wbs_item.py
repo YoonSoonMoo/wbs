@@ -1,3 +1,5 @@
+import re
+
 from app.extensions import get_db
 
 EDITABLE_FIELDS = (
@@ -7,6 +9,9 @@ EDITABLE_FIELDS = (
     'assignee', 'effort', 'progress', 'status',
     'priority', 'is_milestone',
 )
+
+DATE_FIELDS = frozenset({'plan_start', 'plan_end', 'actual_start', 'actual_end'})
+_YY_DATE_RE = re.compile(r'^(\d{2})-(\d{2})-(\d{2})$')
 
 
 def get_items_by_project(project_id):
@@ -45,6 +50,20 @@ def _trim(value):
     return value.strip() if isinstance(value, str) else value
 
 
+def _normalize_date(value):
+    """'YY-MM-DD' 형식을 '20YY-MM-DD'로 보정한다. Frappe Gantt가 1900년대로 오해하는 것을 차단."""
+    if isinstance(value, str) and _YY_DATE_RE.match(value):
+        return '20' + value
+    return value
+
+
+def _norm_field(key, value):
+    trimmed = _trim(value)
+    if key in DATE_FIELDS:
+        return _normalize_date(trimmed)
+    return trimmed
+
+
 def create_item(data):
     db = get_db()
     cursor = db.execute(
@@ -65,10 +84,10 @@ def create_item(data):
             _trim(data.get('subtask', '')),
             _trim(data.get('detail', '')),
             _trim(data.get('description', '')),
-            _trim(data.get('plan_start')),
-            _trim(data.get('plan_end')),
-            _trim(data.get('actual_start')),
-            _trim(data.get('actual_end')),
+            _norm_field('plan_start', data.get('plan_start')),
+            _norm_field('plan_end', data.get('plan_end')),
+            _norm_field('actual_start', data.get('actual_start')),
+            _norm_field('actual_end', data.get('actual_end')),
             _trim(data.get('assignee', '')),
             data.get('effort', 0),
             data.get('progress', 0),
@@ -88,7 +107,7 @@ def update_item(item_id, data, updated_by=None):
     for key in EDITABLE_FIELDS:
         if key in data:
             fields.append(f"{key} = ?")
-            values.append(_trim(data[key]))
+            values.append(_norm_field(key, data[key]))
     if updated_by is not None:
         fields.append("updated_by = ?")
         values.append(updated_by)
