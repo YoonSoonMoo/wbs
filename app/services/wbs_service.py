@@ -2,8 +2,17 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.extensions import get_db
-from app.models import wbs_item as wbs_model
+from app.models import change_history, wbs_item as wbs_model
 from app.services.wbs_code_service import get_next_sort_order, recalculate_codes
+
+
+def _is_history_enabled(project_id) -> bool:
+    """프로젝트의 변경 이력 기록 ON/OFF 플래그를 조회한다."""
+    db = get_db()
+    row = db.execute(
+        "SELECT history_enabled FROM project WHERE id = ?", (project_id,)
+    ).fetchone()
+    return bool(row and row['history_enabled'])
 
 
 def _round_half_up_1(value) -> float:
@@ -55,6 +64,14 @@ def update_item(item_id, data, updated_by=None):
 
     wbs_model.update_item(item_id, data, updated_by=updated_by)
 
+    updated = wbs_model.get_item(item_id)
+    if _is_history_enabled(item['project_id']):
+        change_history.record_changes(
+            item['project_id'], item_id, item, data, updated_by,
+            snapshot_detail=(updated.get('detail') if updated else '') or '',
+            snapshot_assignee=(updated.get('assignee') if updated else '') or '',
+        )
+
     if parent_changed:
         recalculate_codes(item['project_id'])
 
@@ -98,12 +115,22 @@ def move_item(item_id, new_parent_id, new_sort_order):
 
 def batch_update(project_id, items_data, updated_by=None):
     """여러 항목을 일괄 수정한다."""
+    record_hist = _is_history_enabled(project_id)
     results = []
     for item_data in items_data:
         item_id = item_data.pop('id', None)
-        if item_id:
-            wbs_model.update_item(item_id, item_data, updated_by=updated_by)
-            results.append(wbs_model.get_item(item_id))
+        if not item_id:
+            continue
+        before = wbs_model.get_item(item_id)
+        wbs_model.update_item(item_id, item_data, updated_by=updated_by)
+        after = wbs_model.get_item(item_id)
+        if record_hist and before and after:
+            change_history.record_changes(
+                project_id, item_id, before, item_data, updated_by,
+                snapshot_detail=(after.get('detail') or ''),
+                snapshot_assignee=(after.get('assignee') or ''),
+            )
+        results.append(after)
     recalculate_codes(project_id)
     return results
 

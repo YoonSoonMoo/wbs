@@ -18,8 +18,8 @@ def get_project(project_id):
 def create_project(data):
     db = get_db()
     cursor = db.execute(
-        "INSERT INTO project (name, description, start_date, end_date) VALUES (?, ?, ?, ?)",
-        (data['name'], data.get('description', ''), data.get('start_date'), data.get('end_date')),
+        "INSERT INTO project (name, description, start_date, end_date, notice) VALUES (?, ?, ?, ?, ?)",
+        (data['name'], data.get('description', ''), data.get('start_date'), data.get('end_date'), data.get('notice', '')),
     )
     db.commit()
     return cursor.lastrowid
@@ -29,7 +29,7 @@ def update_project(project_id, data):
     db = get_db()
     fields = []
     values = []
-    for key in ('name', 'description', 'start_date', 'end_date'):
+    for key in ('name', 'description', 'start_date', 'end_date', 'history_enabled', 'notice'):
         if key in data:
             fields.append(f"{key} = ?")
             values.append(data[key])

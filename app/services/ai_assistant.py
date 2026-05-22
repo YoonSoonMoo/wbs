@@ -13,6 +13,7 @@ from app.extensions import get_db
 from app.models import project as project_model
 from app.models import wbs_item as wbs_model
 from app.services import wbs_service
+from app.services.wbs_code_service import recalculate_codes
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,7 @@ def _build_system_prompt(items_summary: str, project_overview: str = "") -> str:
 2. **add** — 새 항목 추가
 3. **delete** — 항목 삭제
 4. **update** — 항목 수정
+5. **move** — 행 순서 이동 (TID/행 번호 기준)
 
 ## 응답 형식 (JSON만 반환, 코드블록 없이)
 
@@ -175,6 +177,22 @@ filters에 사용 가능한 특수 키:
     "data": {{"progress": 80, "status": "진행중"}},
     "description": "5번 행의 진행률을 80%로 수정했습니다."
 }}
+
+### move 타입 예시 (TID/행 번호 기준 순서 이동):
+{{
+    "action": "move",
+    "source_row": 43,
+    "target_row": 326,
+    "position": "above",
+    "description": "TID 43번을 326번 위로 이동했습니다."
+}}
+
+※ "TID"는 화면 좌측에 표시되는 행 번호와 동일하다 (1-base, 위 WBS 데이터 요약의 1., 2., 3. 번호).
+※ position 값:
+  - "above" — 대상 행 바로 위로 이동. "위로", "앞으로", "before" 표현에 사용 (기본값).
+  - "below" — 대상 행 바로 아래로 이동. "아래로", "뒤로", "after" 표현에 사용.
+※ 예: "43번을 326번 위로 이동" → source_row=43, target_row=326, position="above".
+※ 예: "10번을 5번 아래로" → source_row=10, target_row=5, position="below".
 
 중요: JSON만 응답하세요. 코드블록으로 감싸지 마세요. 날짜는 반드시 YYYY-MM-DD 형식을 사용하세요.
 4/22 같은 형식은 올해 기준으로 2026-04-22 로 변환하세요."""
@@ -419,6 +437,62 @@ def _execute_update(project_id: int, row_number: int, data: dict) -> dict:
     return {'item': updated}
 
 
+def _execute_move(project_id: int, source_row: int, target_row: int, position: str = 'above') -> dict:
+    """TID(행 번호) 기준으로 항목을 이동하고 sort_order 를 재정렬한다.
+
+    드래그앤드롭과 동일한 시맨틱:
+    - 전역 flat 리스트(sort_order 정렬) 기준으로 source 를 빼고 target 위/아래에 삽입
+    - 모든 항목의 sort_order 를 0..N-1 로 재할당
+    - parent_id 는 변경하지 않음 (기존 드래그 동작과 동일)
+    """
+    try:
+        source_row = int(source_row)
+        target_row = int(target_row)
+    except (TypeError, ValueError):
+        return {'error': 'source_row / target_row 는 정수여야 합니다.'}
+
+    pos = (position or 'above').lower()
+    if pos not in ('above', 'below'):
+        pos = 'above'
+
+    items = wbs_model.get_flat_items(project_id)
+    n = len(items)
+    src_idx = source_row - 1
+    tgt_idx = target_row - 1
+
+    if src_idx < 0 or src_idx >= n:
+        return {'error': f'TID {source_row}번이 존재하지 않습니다.'}
+    if tgt_idx < 0 or tgt_idx >= n:
+        return {'error': f'TID {target_row}번이 존재하지 않습니다.'}
+    if src_idx == tgt_idx:
+        return {'error': '원본과 대상 행이 동일합니다.'}
+
+    moved = items.pop(src_idx)
+    new_idx = tgt_idx
+    if src_idx < tgt_idx:
+        new_idx -= 1
+    if pos == 'below':
+        new_idx += 1
+    new_idx = max(0, min(new_idx, len(items)))
+    items.insert(new_idx, moved)
+
+    db = get_db()
+    for i, it in enumerate(items):
+        db.execute("UPDATE wbs_item SET sort_order = ? WHERE id = ?", (i, it['id']))
+    db.commit()
+
+    recalculate_codes(project_id)
+
+    return {
+        'moved_id': moved['id'],
+        'task_name': moved.get('task_name', ''),
+        'source_row': source_row,
+        'target_row': target_row,
+        'position': pos,
+        'new_row': new_idx + 1,
+    }
+
+
 def process_command(project_id: int, user_input: str) -> dict:
     """자연어 입력을 파싱하고 실행하여 결과를 반환한다."""
     items_summary = _get_items_summary(project_id)
@@ -481,6 +555,22 @@ def process_command(project_id: int, user_input: str) -> dict:
             return {
                 'success': True,
                 'action': 'update',
+                'message': description,
+                'data': result,
+            }
+
+        elif action == 'move':
+            result = _execute_move(
+                project_id,
+                parsed.get('source_row', 0),
+                parsed.get('target_row', 0),
+                parsed.get('position', 'above'),
+            )
+            if 'error' in result:
+                return {'success': False, 'message': result['error']}
+            return {
+                'success': True,
+                'action': 'move',
                 'message': description,
                 'data': result,
             }

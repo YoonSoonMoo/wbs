@@ -19,6 +19,14 @@
     <!-- TOP BAR -->
     <div class="top-bar">
       <h1>{{ project_name }} <span>Work Breakdown Structure {% if app_version %}<small style="font-size:10px; opacity:0.8; margin-left:4px;">{{ app_version }}</small>{% endif %}</span></h1>
+      {% if notice %}
+      <div class="notice-marquee" title="{{ notice }}">
+        <span class="notice-badge">📢 공지</span>
+        <div class="notice-track">
+          <span class="notice-text">{{ notice }}</span>
+        </div>
+      </div>
+      {% endif %}
       <div class="top-bar-actions">
         <span class="btn btn-top" style="cursor:default;opacity:0.7;">{{ user_name }}{% if project_role == 'admin' %}
           (관리자){% elif project_role == 'viewer' %} (뷰어){% endif %}</span>
@@ -32,6 +40,9 @@
         {% endif %}
         {% if project_role != 'viewer' %}
         <a href="/project/{{ project_id }}/gantt" class="btn btn-top">📊 Gantt</a>
+        {% if history_enabled %}
+        <button class="btn btn-top" onclick="openHistoryModal()" title="WBS 변경 이력 보기">📜 이력 관리</button>
+        {% endif %}
         {% endif %}
         <button class="btn btn-top" onclick="startWalkthrough()" title="화면 기능 가이드 다시 보기">❓ 가이드</button>
       </div>
@@ -74,6 +85,7 @@
       <div class="toolbar-group">
         <label class="toolbar-check"><input type="checkbox" id="filterDone" onchange="filterGrid()"> 완료 포함</label>
         <label class="toolbar-check"><input type="checkbox" id="filterMine" onchange="filterGrid()"> 나만의 태스크</label>
+        <label class="toolbar-check"><input type="checkbox" id="filterThisWeek" onchange="filterGrid()" title="계획시작일 또는 계획완료일이 이번주(월~일)에 포함된 태스크"> 이번주 태스크</label>
       </div>
       {% if project_role != 'viewer' %}
       <div class="toolbar-sep"></div>
@@ -160,6 +172,41 @@
       </div>
       <div class="stats-modal-body" id="statsModalBody">
         <div class="stats-loading">통계 데이터를 불러오는 중...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY MODAL -->
+  <div class="modal-overlay" id="historyModal" onclick="if(event.target===this)closeHistoryModal()">
+    <div class="stats-modal history-modal">
+      <div class="stats-modal-hdr">
+        <div class="stats-modal-hdr-left">
+          <div class="stats-hdr-eyebrow">Change History</div>
+          <div class="stats-hdr-title">WBS 변경 이력</div>
+        </div>
+        <button class="btn stats-close-btn" onclick="closeHistoryModal()">✕ 닫기</button>
+      </div>
+      <div class="stats-modal-body">
+        <div class="history-toolbar">
+          <input type="text" class="search-box" id="historySearch" placeholder="세부항목·담당자·변경주체 검색..." oninput="renderHistoryRows()">
+          <span class="history-meta" id="historyMeta">-</span>
+        </div>
+        <div class="history-table-wrap">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th style="width:120px;">일자</th>
+                <th style="width:200px;">세부항목</th>
+                <th style="width:62px;">담당자</th>
+                <th style="width:62px;">변경주체</th>
+                <th>변경내용</th>
+              </tr>
+            </thead>
+            <tbody id="historyBody">
+              <tr><td colspan="5" class="history-loading">불러오는 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>

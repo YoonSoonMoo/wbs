@@ -230,6 +230,24 @@ body {
     padding: 4px 8px;
 }
 
+.project-actions .btn-hist-toggle {
+    flex: 0 0 auto;
+    min-width: 78px;
+    border: 1px solid #d1d5db;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-weight: 600;
+    letter-spacing: .2px;
+}
+.project-actions .btn-hist-toggle.on {
+    background: #eef2ff;
+    border-color: #6366f1;
+    color: #4338ca;
+}
+.project-actions .btn-hist-toggle:hover {
+    filter: brightness(0.97);
+}
+
 /* ===== WBS Grid ===== */
 .wbs-container {
     display: flex;

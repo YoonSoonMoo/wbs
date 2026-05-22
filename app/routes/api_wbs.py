@@ -1,7 +1,7 @@
 from flask import Blueprint, g, jsonify, request, session
 
 from app.auth import api_login_required, project_access_required
-from app.models import wbs_item as wbs_model
+from app.models import change_history, wbs_item as wbs_model
 from app.services import dashboard_service, wbs_service
 from app.services.ai_assistant import process_command as ai_process_command
 from app.services.auth_service import get_project_role
@@ -241,6 +241,26 @@ def send_delay_mail(project_id):
     return jsonify({'sent': sent_count, 'total': len(by_assignee), 'results': results})
 
 
+# --- 변경 이력 ---
+
+@api_wbs_bp.route('/<int:project_id>/history', methods=['GET'])
+@api_login_required
+@project_access_required('developer')
+def list_history(project_id):
+    """프로젝트의 WBS 변경 이력을 최신순으로 반환한다."""
+    try:
+        limit = max(1, min(int(request.args.get('limit', 200)), 1000))
+    except (TypeError, ValueError):
+        limit = 200
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+    except (TypeError, ValueError):
+        offset = 0
+    items = change_history.list_changes(project_id, limit=limit, offset=offset)
+    total = change_history.count_changes(project_id)
+    return jsonify({'items': items, 'total': total})
+
+
 # --- AI 어시스턴트 ---
 
 @api_wbs_bp.route('/<int:project_id>/ai', methods=['POST'])
@@ -256,7 +276,7 @@ def ai_assistant(project_id):
 
     # viewer는 조회만 가능
     result = ai_process_command(project_id, user_query)
-    if role == 'viewer' and result.get('action') in ('add', 'delete', 'update'):
+    if role == 'viewer' and result.get('action') in ('add', 'delete', 'update', 'move'):
         return jsonify({'success': False, 'message': '읽기 전용 권한으로는 데이터를 변경할 수 없습니다.'}), 403
 
     return jsonify(result)

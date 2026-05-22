@@ -45,6 +45,18 @@ function renderGrid() {
     var sv = (document.getElementById('searchInput').value || '').toLowerCase();
     var showDone = document.getElementById('filterDone') && document.getElementById('filterDone').checked;
     var showMine = document.getElementById('filterMine') && document.getElementById('filterMine').checked;
+    var showThisWeek = document.getElementById('filterThisWeek') && document.getElementById('filterThisWeek').checked;
+
+    // 이번주(월~일) 범위 계산 (로컬 자정 기준)
+    var weekStart = null, weekEnd = null;
+    if (showThisWeek) {
+        var t = new Date(); t.setHours(0,0,0,0);
+        var dow = t.getDay(); // 0=일, 1=월, ..., 6=토
+        var offsetToMon = (dow === 0 ? -6 : 1 - dow);
+        weekStart = new Date(t.getFullYear(), t.getMonth(), t.getDate() + offsetToMon);
+        weekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6);
+    }
+
     var filtered = [];
 
     for (var i = 0; i < data.length; i++) {
@@ -56,6 +68,14 @@ function renderGrid() {
         }
         if (!showDone && (parseFloat(r.progress) || 0) >= 100) continue;
         if (showMine && (typeof USER_NAME !== 'undefined') && r.assignee !== USER_NAME) continue;
+        if (showThisWeek) {
+            var inWeek = false;
+            var ps = r.plan_start ? new Date(r.plan_start + 'T00:00:00') : null;
+            var pe = r.plan_end ? new Date(r.plan_end + 'T00:00:00') : null;
+            if (ps && !isNaN(ps) && ps >= weekStart && ps <= weekEnd) inWeek = true;
+            else if (pe && !isNaN(pe) && pe >= weekStart && pe <= weekEnd) inWeek = true;
+            if (!inWeek) continue;
+        }
         if (aiFilterIds && aiFilterIds.indexOf(r._id) < 0) continue;
         filtered.push(r);
     }
@@ -73,7 +93,7 @@ function renderGrid() {
     var canEdit = (typeof USER_ROLE !== 'undefined' && USER_ROLE !== 'viewer');
     var ceAttr = canEdit ? ' contenteditable="true"' : '';
     var editClass = canEdit ? 'editable' : '';
-    var canDrag = canEdit && !sortCol && !sv && !showMine;
+    var canDrag = canEdit && !sortCol && !sv && !showMine && !showThisWeek;
     var todayDate = new Date(); todayDate.setHours(0,0,0,0);
 
     var h = '';
@@ -121,7 +141,7 @@ function renderGrid() {
     if (filterInfo) {
         // 빠른검색·나만의·AI 필터 중 하나라도 활성이면 length 비교와 무관하게 표시.
         // (완료 포함 체크 시 length가 전체와 같아져도 검색 결과 합계는 보여야 한다)
-        var hasActiveFilter = !!sv || showMine || (aiFilterIds && aiFilterIds.length > 0);
+        var hasActiveFilter = !!sv || showMine || showThisWeek || (aiFilterIds && aiFilterIds.length > 0);
         var isFiltered = hasActiveFilter || filtered.length !== data.length;
         if (isFiltered) {
             var sumEffort = 0;
@@ -1046,7 +1066,7 @@ function sendAiQuery() {
 
                     html += '<button class="btn ai-clear-btn" onclick="clearAiFilter()">필터 해제</button>';
                 }
-            } else if (res.action === 'add' || res.action === 'delete' || res.action === 'update') {
+            } else if (res.action === 'add' || res.action === 'delete' || res.action === 'update' || res.action === 'move') {
                 aiFilterIds = null;
                 loadItems();
                 html += '<div class="ai-msg">' + esc(res.message) + '</div>';
@@ -1198,7 +1218,7 @@ function renderStatsModal(data) {
     // ── 주차별 진척 현황 (CSS Grid) ──
     h += '<div class="stats-sect" style="margin-top:18px">주차별 진척 현황</div>';
     h += '<div class="stats-grid-wrap">';
-    h += '<div class="stats-grid-hdr"><span>주차</span><span>전체</span><span>신규</span><span>주간완료</span><span>누적완료</span><span>진척률</span><span>주간 진척률</span><span>전체공수</span><span>완료공수</span></div>';
+    h += '<div class="stats-grid-hdr"><span>주차</span><span>전체</span><span>신규</span><span>주간완료</span><span>누적완료</span><span title="전체 태스크 중 계획 주차에 맞춰 완료된 비율 (관측 9주 기준)">계획 준수율</span><span>주간 진척률</span><span>전체공수</span><span>완료공수</span></div>';
 
     weekly.forEach(function(w, i) {
         var isCur = (i === 0);
@@ -1215,7 +1235,7 @@ function renderStatsModal(data) {
         h += '<span style="color:#18a058;font-weight:600">' + w.completed_week + ' / <span style="color:#8b92a5">' + w.planned_week + '</span></span>';
         // 누적완료 (관측 구간 내 주간완료의 누적 합)
         h += '<span>' + w.cumulative_completed_week + '</span>';
-        // 진척률 (누적완료 / 전체)
+        // 계획 준수율 (누적완료 / 전체)
         if (w.total_tasks > 0) {
             var cumRate = Math.round(w.cumulative_completed_week / w.total_tasks * 100);
             var cumColor = _rateColor(cumRate);
@@ -1434,4 +1454,99 @@ function _statsKpi(label, value, deltaHtml, unit) {
         + '<div class="stats-kpi-val">' + value + '</div>'
         + '<div class="stats-kpi-delta-row">' + (deltaHtml || '') + '</div>'
         + '</div>';
+}
+
+// ===== History Modal =====
+var HISTORY_FIELD_LABELS = {
+    detail: '세부항목',
+    assignee: '담당자',
+    plan_start: '계획시작',
+    plan_end: '계획완료',
+    effort: '공수',
+    progress: '진행률'
+};
+var historyItems = [];
+
+function openHistoryModal() {
+    if (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'viewer') {
+        showToast('이력 조회 권한이 없습니다.', 'error');
+        return;
+    }
+    document.getElementById('historyModal').classList.add('show');
+    var searchEl = document.getElementById('historySearch');
+    if (searchEl) searchEl.value = '';
+    document.getElementById('historyBody').innerHTML = '<tr><td colspan="5" class="history-loading">불러오는 중...</td></tr>';
+    document.getElementById('historyMeta').textContent = '-';
+    API.get('/api/wbs/' + PROJECT_ID + '/history?limit=500')
+        .then(function(res) {
+            historyItems = (res && res.items) || [];
+            renderHistoryRows();
+        })
+        .catch(function() {
+            document.getElementById('historyBody').innerHTML = '<tr><td colspan="5" class="history-empty">이력을 불러올 수 없습니다.</td></tr>';
+        });
+}
+
+function closeHistoryModal() {
+    document.getElementById('historyModal').classList.remove('show');
+}
+
+function _fmtHistoryDate(s) {
+    if (!s) return '';
+    // 'YYYY-MM-DD HH:MM:SS' -> 'YY-MM-DD HH:MM'
+    var m = s.match(/^\d{4}-\d{2}-\d{2}/);
+    if (!m) return s;
+    var head = s.substring(2, 10);
+    var tail = s.length >= 16 ? s.substring(11, 16) : '';
+    return tail ? (head + ' ' + tail) : head;
+}
+
+function _fmtHistoryValue(field, v) {
+    if (v === null || v === undefined || v === '') return '(빈 값)';
+    if (field === 'plan_start' || field === 'plan_end') return shortDate(v);
+    if (field === 'progress') return v + '%';
+    return v;
+}
+
+function _fmtHistoryChange(field, oldV, newV) {
+    var label = HISTORY_FIELD_LABELS[field] || field;
+    return '<span class="history-field-tag">' + esc(label) + '</span>'
+         + '<span class="history-old">' + esc(_fmtHistoryValue(field, oldV)) + '</span>'
+         + '<span class="history-arrow">→</span>'
+         + '<span class="history-new">' + esc(_fmtHistoryValue(field, newV)) + '</span>';
+}
+
+function renderHistoryRows() {
+    var body = document.getElementById('historyBody');
+    var meta = document.getElementById('historyMeta');
+    var q = (document.getElementById('historySearch').value || '').toLowerCase().trim();
+    var rows = historyItems;
+    if (q) {
+        rows = rows.filter(function(r) {
+            var hay = [
+                r.snapshot_detail || '', r.snapshot_assignee || '',
+                r.changed_by || '', HISTORY_FIELD_LABELS[r.field] || r.field || '',
+                r.old_value || '', r.new_value || ''
+            ].join(' ').toLowerCase();
+            return hay.indexOf(q) >= 0;
+        });
+    }
+    if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="5" class="history-empty">변경 이력이 없습니다.</td></tr>';
+        meta.textContent = '총 0건';
+        return;
+    }
+    var h = '';
+    for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        h += '<tr>'
+           + '<td class="history-date">' + esc(_fmtHistoryDate(r.changed_at)) + '</td>'
+           + '<td class="history-detail">' + esc(r.snapshot_detail || '') + '</td>'
+           + '<td>' + esc(r.snapshot_assignee || '') + '</td>'
+           + '<td>' + esc(r.changed_by || '') + '</td>'
+           + '<td class="history-detail">' + _fmtHistoryChange(r.field, r.old_value, r.new_value) + '</td>'
+           + '</tr>';
+    }
+    body.innerHTML = h;
+    meta.textContent = '총 ' + historyItems.length + '건' + (q ? ' · 필터 ' + rows.length + '건' : '');
 }

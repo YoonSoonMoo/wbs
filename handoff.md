@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | https://github.com/YoonSoonMoo/wbs.git |
-| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인, Gantt 담당자 색상/완료 필터/오늘 세로선, 워크쓰루 투어), 2026-04-22 (패스워드 리셋 강제 변경 플로우), 2026-04-23 (API 테스트 스위트, 프로젝트 개요 AI 주입, 주간 통계 공수 기준 진척률, 랜딩 AI 쇼케이스), 2026-04-30 (그리드 컬럼 리사이즈, 정렬 버튼 분리, 지연 판단 보정, 푸터 필터 정보, 권한 단일관리, 대시보드 진행률 공수가중 통일), 2026-05-07 (Gantt 일자 정규화 버그 수정, 로고 교체 logo.png → logo2.png, footer 필터 정보 표시 조건 보강) |
+| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인, Gantt 담당자 색상/완료 필터/오늘 세로선, 워크쓰루 투어), 2026-04-22 (패스워드 리셋 강제 변경 플로우), 2026-04-23 (API 테스트 스위트, 프로젝트 개요 AI 주입, 주간 통계 공수 기준 진척률, 랜딩 AI 쇼케이스), 2026-04-30 (그리드 컬럼 리사이즈, 정렬 버튼 분리, 지연 판단 보정, 푸터 필터 정보, 권한 단일관리, 대시보드 진행률 공수가중 통일), 2026-05-07 (Gantt 일자 정규화 버그 수정, 로고 교체 logo.png → logo2.png, footer 필터 정보 표시 조건 보강), 2026-05-15 (WBS 변경 이력 추적 시스템, AI 어시스턴트 move 액션), 2026-05-22 (프로젝트 공지사항 marquee — 그리드 상단 우→좌 흐름 표시) |
 
 ## 2. 기술 스택
 
@@ -35,8 +35,9 @@ wbs/
 │   ├── config.py                # 환경설정 (Dev/Prod/Test)
 │   ├── extensions.py            # DB 헬퍼 (get_db, close_db, init_db)
 │   ├── models/
-│   │   ├── project.py           # 프로젝트 CRUD 쿼리
-│   │   └── wbs_item.py          # WBS 항목 CRUD 쿼리 (재귀 CTE 트리 조회, _trim 헬퍼)
+│   │   ├── project.py           # 프로젝트 CRUD 쿼리 (history_enabled 플래그 포함)
+│   │   ├── wbs_item.py          # WBS 항목 CRUD 쿼리 (재귀 CTE 트리 조회, _trim 헬퍼)
+│   │   └── change_history.py    # WBS 변경 이력 CRUD (record_changes, list_changes, count_changes)
 │   ├── services/
 │   │   ├── wbs_service.py       # WBS 핵심 비즈니스 로직 (트리 구축, 이동, 일괄수정)
 │   │   ├── wbs_code_service.py  # WBS 코드 자동생성/재계산 로직
@@ -85,7 +86,10 @@ wbs/
 │   ├── 006_member_admin_role.sql# project_member.role CHECK 제약 확장 (admin 허용)
 │   ├── 007_remove_admin_members.sql # 전역 admin 유저는 project_member에서 제거
 │   ├── 008_unify_user_role.sql  # 권한 단일관리: user.role 일괄 정리 + project_member.role 동기화
-│   └── 009_normalize_dates.sql  # 'YY-MM-DD'로 잘못 저장된 일자 컬럼을 '20YY-MM-DD'로 일괄 정정
+│   ├── 009_normalize_dates.sql  # 'YY-MM-DD'로 잘못 저장된 일자 컬럼을 '20YY-MM-DD'로 일괄 정정
+│   ├── 010_change_history.sql   # wbs_change_history 테이블 (변경 이력 추적, 6개 필드 모니터링)
+│   ├── 011_project_history_flag.sql # project.history_enabled 플래그 (프로젝트별 이력 기록 ON/OFF, 기본 0)
+│   └── 012_project_notice.sql   # project.notice 컬럼 (그리드 상단 marquee 공지사항, 기본 '')
 ├── instance/                    # SQLite DB 파일 (자동 생성, gitignore 대상)
 ├── tests/                       # pytest API 테스트 스위트 (conftest + 8개 파일, 67건)
 ├── template/
@@ -109,6 +113,8 @@ wbs/
 | end_date | TEXT | 종료일 |
 | created_at | TEXT | 생성일시 |
 | updated_at | TEXT | 수정일시 (트리거 자동) |
+| history_enabled | INTEGER | 변경 이력 기록 ON/OFF (0=OFF, 1=ON, 기본 0) |
+| notice | TEXT | 그리드 상단 marquee 공지사항 (우→좌 흘림 표시, 빈 문자열이면 미표시) |
 
 ### wbs_item 테이블 (핵심)
 | 컬럼 | 타입 | 설명 |
@@ -160,6 +166,25 @@ wbs/
 - admin 역할 사용자는 project_member 없이도 모든 프로젝트에 접근 가능 (`007_remove_admin_members.sql` 이후 admin은 project_member에서 제외)
 - **권한 판정은 `user.role` 단일 출처**: project_member는 "이 프로젝트에 어떤 유저가 속해 있는가"만 표현, 역할은 user.role을 그대로 사용
 
+### wbs_change_history 테이블 (변경 이력 추적, 010_change_history.sql)
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | INTEGER PK | 자동 증가 |
+| project_id | INTEGER FK | 소속 프로젝트 (CASCADE) |
+| item_id | INTEGER FK | 대상 WBS 항목 (SET NULL, 항목 삭제돼도 이력 보존) |
+| changed_at | TEXT | 변경 일시 (`datetime('now','localtime')`) |
+| changed_by | TEXT | 변경 주체 (세션 user_name) |
+| field | TEXT NOT NULL | 변경 필드명 (`detail/assignee/plan_start/plan_end/effort/progress` 중 하나) |
+| old_value | TEXT | 변경 전 값 (문자열로 정규화) |
+| new_value | TEXT | 변경 후 값 |
+| snapshot_detail | TEXT | 변경 시점의 세부항목 스냅샷 (이력 화면 검색·식별용) |
+| snapshot_assignee | TEXT | 변경 시점의 담당자 스냅샷 |
+
+- 추적 필드(`TRACKED_FIELDS`): `detail`, `assignee`, `plan_start`, `plan_end`, `effort`, `progress` 6개
+- `record_changes()`: before/after dict 비교 후 변경된 필드만 행 단위 INSERT (effort/progress는 float 동등 비교)
+- `_is_history_enabled(project_id)`로 프로젝트 플래그가 ON일 때만 기록 (`wbs_service.update_item`/`batch_update`에서 호출)
+- 인덱스: `idx_hist_project (project_id, changed_at DESC)`, `idx_hist_item (item_id)`
+
 ### schema_version 테이블 (마이그레이션 버전 추적)
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
@@ -198,6 +223,7 @@ wbs/
 | GET | `/api/projects/<id>` | 프로젝트 상세 |
 | PUT | `/api/projects/<id>` | 프로젝트 수정 |
 | DELETE | `/api/projects/<id>` | 프로젝트 삭제 (admin만) |
+| PATCH | `/api/projects/<id>/history-flag` | 변경 이력 기록 ON/OFF 토글 (admin 전용, body `{enabled: true\|false}`) |
 | GET | `/api/projects/<id>/members` | 프로젝트 멤버 목록 |
 | GET | `/api/projects/users` | 전체 사용자 목록 (멤버 할당용) |
 
@@ -219,7 +245,8 @@ wbs/
 | GET | `/api/wbs/<pid>/schedule-gaps` | 계획일 vs 실제일 차이 분석 (지연일수 포함) |
 | GET | `/api/wbs/<pid>/weekly-stats` | 주간 진척 통계 (?weeks=4, 이번 주 + 과거 N주) |
 | POST | `/api/wbs/<pid>/send-delay-mail` | 지연 태스크 담당자별 이메일 알림 발송 |
-| POST | `/api/wbs/<pid>/ai` | AI 어시스턴트 자연어 질의 처리 |
+| POST | `/api/wbs/<pid>/ai` | AI 어시스턴트 자연어 질의 처리 (조회/추가/삭제/수정/이동) |
+| GET | `/api/wbs/<pid>/history` | WBS 변경 이력 조회 (developer 이상, `?limit=200&offset=0`, 최신순) |
 
 ### 유저 관리 API (`/api/users`, admin 전용)
 | Method | URL | 설명 |
@@ -280,8 +307,9 @@ wbs/
 ### AI 어시스턴트: Claude CLI subprocess 방식
 
 - `app/services/ai_assistant.py`의 `_call_claude()`가 `claude -p --max-turns 1` subprocess를 **동기 호출** (timeout=120초)
-- `process_command(project_id, query)` 진입점: 자연어 질의를 분석해 `_execute_query/add/delete/update()` 중 하나 선택 실행
+- `process_command(project_id, query)` 진입점: 자연어 질의를 분석해 `_execute_query/add/delete/update/move()` 중 하나 선택 실행
 - 조회 결과는 `ids` 배열과 `display` 문자열로 반환 → 프론트엔드에서 해당 행만 그리드에 필터 표시
+- **move 액션** (2026-05-15): TID(행 번호) 기준 순서 이동을 지원. `source_row`/`target_row`/`position(above|below)` 파라미터를 받아 `get_flat_items` 전역 리스트에서 source pop → target 위/아래 삽입 → `sort_order` 0..N-1 재할당 → `recalculate_codes()` 실행. parent_id는 변경하지 않음(기존 드래그앤드롭과 동일한 시맨틱). viewer는 서버에서 403
 - `analyze_schedule_gaps(project_id)`: 계획일 vs 실제 작업일 차이 분석 (지연일수, 공수 집계)
 - **동시성 제약**: Flask 개발 서버 단일 스레드 기준, 복수 사용자 동시 질의 시 Claude CLI 호출이 순차 처리됨 (최대 120초 × N 대기 가능). 개선 시 `threaded=True` 또는 Claude API 직접 호출(anthropic SDK) 전환 필요
 
@@ -590,10 +618,70 @@ python run.py
     - `create_item`/`update_item`이 일자 컬럼에 한해 `_norm_field`를 거치도록 변경 (CSV/Excel import 도 `create_item` 경유이므로 자동 보호)
   - 프론트(`grid.js`)는 기존에도 focusout/paste 시 정규화하지만 누락 경로(예: 일부 paste 케이스)가 있었음. 이제 백엔드에서 마지막 방어선 확보
 
+- [x] WBS 변경 이력 추적 시스템 (2026-05-15):
+  - [x] **DB 스키마** — 마이그레이션 2종 신규:
+    - `010_change_history.sql` — `wbs_change_history` 테이블 (id, project_id, item_id, changed_at, changed_by, field, old_value, new_value, snapshot_detail, snapshot_assignee). `idx_hist_project(project_id, changed_at DESC)`, `idx_hist_item(item_id)` 인덱스. `item_id`는 `ON DELETE SET NULL`로 항목 삭제돼도 이력 보존
+    - `011_project_history_flag.sql` — `project.history_enabled INTEGER DEFAULT 0` 컬럼 추가. 기존 프로젝트는 모두 OFF로 도입 (기능 도입 후 명시적 ON 필요)
+  - [x] **이력 기록 로직** (`app/models/change_history.py`, `app/services/wbs_service.py`):
+    - `TRACKED_FIELDS = ('detail','assignee','plan_start','plan_end','effort','progress')` 6개 필드만 추적 (구분/Task/서브태스크/실제일자/상태/우선순위 등은 제외)
+    - `record_changes(project_id, item_id, before, after, changed_by, snapshot_detail, snapshot_assignee)` — after dict에 포함된 필드만 비교 (PATCH 부분 업데이트와 호환), `_eq()`로 필드별 동등 비교 (effort/progress는 float, 나머지는 trim 후 문자열). 변경된 필드만 `executemany`로 INSERT
+    - `_is_history_enabled(project_id)` — `wbs_service`가 매 업데이트마다 호출, OFF면 기록 스킵 (성능·DB 부피 절약)
+    - `wbs_service.update_item()` 및 `batch_update()` 모두 hook 추가 — update 이후 `wbs_model.get_item(item_id)`로 after 조회 → snapshot용 detail/assignee 결정. drag-and-drop sort_order 변경은 추적 대상 외(parent_id 변동만 발생, 6개 추적 필드와 무관)
+  - [x] **API 엔드포인트**:
+    - `PATCH /api/projects/<id>/history-flag` (`api_project.py`) — admin 전용, body `{enabled: bool}`, `project_model.update_project`로 `history_enabled` 갱신. `project.py` 모델의 `update_project` 화이트리스트 키에 `history_enabled` 추가
+    - `GET /api/wbs/<pid>/history` (`api_wbs.py`) — developer 이상, `?limit=200&offset=0` (limit clamp [1,1000]), `changed_at DESC, id DESC` 순. `{items: [...], total: N}` 반환
+  - [x] **대시보드 프로젝트 카드 토글 버튼** (`dashboard.js`, `style.css`):
+    - admin 전용 `.btn-hist-toggle` 버튼 — 라벨 `이력: ON/OFF`, OFF=회색 / ON=`#eef2ff`+`#6366f1` 테두리+`#4338ca` 텍스트 (인디고 톤)
+    - `toggleProjectHistory(projectId, nextEnabled, btn)` — PATCH 호출 후 클래스/라벨/onclick 인자 모두 재구성, 토스트로 활성/비활성 안내
+    - `project.history_enabled` 필드는 기존 `GET /api/projects` 응답에 이미 포함됨(SELECT * 사용)
+  - [x] **WBS 페이지 이력 모달** (`wbs.html`, `wbs.css`, `grid.js`, `main.py`):
+    - `main.py wbs_view`가 템플릿에 `history_enabled` 컨텍스트 전달 → `{% if history_enabled %}`로 admin이 OFF한 프로젝트엔 버튼 자체 미렌더. `{% if project_role != 'viewer' %}` 조건과 AND
+    - top-bar `📜 이력 관리` 버튼 → `openHistoryModal()` 실행 → `/api/wbs/<pid>/history?limit=500` 페치 → 5컬럼 테이블(일자/세부항목/담당자/변경주체/변경내용)
+    - 변경내용 셀: `<span class="history-field-tag">필드명</span><span class="history-old">기존값</span> → <span class="history-new">새 값</span>` 형식. `HISTORY_FIELD_LABELS`로 한글 라벨 매핑, 날짜 컬럼은 `shortDate`, 진행률은 `%` 부가, 빈 값은 `(빈 값)`
+    - 검색박스 — 세부항목·담당자·변경주체·필드명·값 통합 lowercase 부분일치, `renderHistoryRows()` 즉시 재필터
+    - 헤더 메타 표기: `총 N건 · 필터 M건` (검색 시), 일자는 `YY-MM-DD HH:MM` 포맷
+    - CSS 신설: `.history-modal` (max-width 1120px), `.history-table`, `.history-field-tag` (인디고 칩), `.history-old` (취소선·빨강), `.history-new` (초록·굵게), `.history-arrow` (회색 →), `.history-empty/loading` 등
+    - viewer 가드: `USER_ROLE === 'viewer'`면 모달 진입 차단 (서버도 developer 이상 요구)
+  - [x] **운영 가이드**: 기존 프로젝트의 변경 이력은 ON 토글 시점부터 누적되므로, 신규 도입 시 PM이 명시적으로 ON해야 한다. ON 상태에서 PATCH/배치 업데이트 1회당 변경 필드 수만큼 행이 적재되므로 장기 운영 시 archival/rotation 정책 검토 필요(현재 별도 정리 작업 없음)
+
+- [x] AI 어시스턴트 move 액션 (2026-05-15):
+  - [x] **신규 액션 추가** (`app/services/ai_assistant.py`):
+    - 시스템 프롬프트 4가지 액션 → 5가지로 확장 (`query/add/delete/update/move`)
+    - 응답 JSON 스키마: `{action: "move", source_row, target_row, position("above"|"below"), description}`
+    - 프롬프트 가이드: "TID는 화면 좌측 행 번호와 동일(1-base, items_summary의 1./2./3. 번호와 일치)", position 매핑 ("위로/앞으로/before"→above, "아래로/뒤로/after"→below). 자연어 예시 2건 ("43번을 326번 위로 이동", "10번을 5번 아래로") 포함
+  - [x] **실행 로직** `_execute_move(project_id, source_row, target_row, position='above')`:
+    - `get_flat_items(project_id)` 으로 sort_order 정렬된 전역 리스트 획득. `source_row-1`, `target_row-1`을 인덱스로 환산하고 범위 검증 (없는 행/동일 행은 에러 반환)
+    - 리스트에서 source pop → 목표 인덱스 계산 (src < tgt면 -1 보정, below면 +1) → insert → 전체 `UPDATE wbs_item SET sort_order = ? WHERE id = ?` 일괄 적용 (`recalculate_codes` 호출)
+    - parent_id는 변경하지 않음 (기존 드래그앤드롭과 동일한 시맨틱: 부모 이동은 별도 UI 작업)
+    - 반환: `{moved_id, task_name, source_row, target_row, position, new_row}`
+  - [x] **권한 가드**: `api_wbs.py ai_assistant()` viewer 차단 액션 목록에 `'move'` 추가 (`add/delete/update/move` 모두 403)
+  - [x] **프론트 처리** (`grid.js sendAiQuery()`): `res.action === 'move'` 분기 — 기존 add/delete/update와 동일하게 `aiFilterIds = null` + `loadItems()` 리로드 + 결과 메시지 표시
+
+- [x] 프로젝트 공지사항 marquee (2026-05-22):
+  - [x] **DB 스키마** — 마이그레이션 `012_project_notice.sql`:
+    - `project.notice TEXT DEFAULT ''` 컬럼 추가. 기존 프로젝트는 빈 문자열로 도입 (미입력 시 그리드 상단에 표시되지 않음)
+  - [x] **모델 / API** (`app/models/project.py`):
+    - `update_project()` 화이트리스트 키에 `notice` 추가
+    - `create_project()` INSERT 컬럼 목록에 `notice` 추가 (신규 생성 시에도 같이 저장)
+    - 기존 `GET /api/projects/<id>` 응답이 `SELECT *`라 별도 변경 없이 notice 필드 노출
+  - [x] **대시보드 프로젝트 모달** (`app/templates/index.html`, `app/static/js/dashboard.js`):
+    - "설명" textarea 아래에 **공지사항** 입력란(`#project-notice`, rows=2) 신설 — 예시 placeholder/`.form-hint` 안내 ("우→좌 흘림 알림으로 표시, 비워두면 미표시")
+    - `editProject()`에서 `project.notice`를 로드, `handleProjectSubmit()` payload에 `notice` 포함
+  - [x] **WBS 그리드 상단 marquee** (`app/routes/main.py`, `app/templates/wbs.html`, `app/static/css/wbs.css`):
+    - `wbs_view`가 `project.notice`를 `strip()` 후 템플릿에 전달. 빈 문자열이면 `{% if notice %}` 조건이 마크업 자체를 렌더링하지 않아 top-bar가 영향받지 않음
+    - top-bar 제목과 액션 버튼 사이(`flex:1` 영역)에 `.notice-marquee` 컨테이너 배치 — `.notice-badge` "📢 공지" 칩 + `.notice-track > .notice-text` 흐름 영역
+    - **우→좌 흐름 애니메이션**: `padding-left:100%` + `@keyframes noticeScroll {from{transform:translateX(0)} to{transform:translateX(-100%)}}` 22초 linear infinite. `.notice-track:hover .notice-text { animation-play-state:paused }`로 가독성 보조
+    - **다크 navy `#1e293b` 위 시인성 배색**:
+      - 컨테이너: amber 그라데이션 배경 `linear-gradient(90deg,rgba(245,158,11,.22),rgba(245,158,11,.10))` + 노란 테두리 `rgba(252,211,77,.55)`, `box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)`로 입체감
+      - "📢 공지" 뱃지: 솔리드 `#fbbf24` 배경 + 다크 텍스트 `#1e293b` (강한 대비 라벨)
+      - 흐름 텍스트: `#fde68a` (밝은 파스텔 옐로우) + `text-shadow:0 1px 2px rgba(0,0,0,.45)` (대비 보강)
+    - 액션 버튼 영역에 `flex-shrink:0` 추가하여 marquee가 가변 폭을 차지하더라도 버튼 묶음이 줄지 않도록 가드
+    - `title="{{ notice }}"`로 호버 시 전체 문구 툴팁 노출 (긴 공지일 때 대안 접근성)
+
 ## 9. 미구현 / 향후 작업
 
 - [x] 테스트 코드 작성 (`tests/`) — 2026-04-23 pytest 기반 API 테스트 스위트 67건 (conftest + 8개 파일). 서비스 계층 단위 테스트·프론트 E2E는 미구현
-- [ ] 변경 이력 추적
+- [x] 변경 이력 추적 — 2026-05-15 완료 (`wbs_change_history` 테이블, 프로젝트별 ON/OFF 플래그, 이력 모달). 행 단위 archival/rotation 정책은 미도입
 - [ ] 인쇄/PDF 보고서 출력
 - [x] Chart.js 통계 모달 차트 (도넛, 라인) — 대시보드 페이지 차트는 미구현
 - [ ] Excel Import UI (파일 업로드 폼)

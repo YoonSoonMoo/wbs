@@ -46,10 +46,14 @@ async function renderProjects(projects) {
         html += '</div>';
 
         if (isAdmin) {
+            var histOn = !!project.history_enabled;
+            var histCls = histOn ? 'btn btn-hist-toggle on' : 'btn btn-hist-toggle';
+            var histLabel = histOn ? '이력: ON' : '이력: OFF';
             html += '<div class="project-actions" onclick="event.stopPropagation()">';
             html += '<button class="btn" onclick="editProject(' + project.id + ')">수정</button>';
             html += '<button class="btn" style="color:var(--danger)" onclick="clearProjectData(' + project.id + ', \'' + escapeHtml(project.name).replace(/'/g, "\\'") + '\')">데이터 초기화</button>';
             html += '<button class="btn" style="color:var(--danger)" onclick="deleteProject(' + project.id + ', \'' + escapeHtml(project.name).replace(/'/g, "\\'") + '\')">삭제</button>';
+            html += '<button class="' + histCls + '" data-pid="' + project.id + '" onclick="toggleProjectHistory(' + project.id + ', ' + (histOn ? 0 : 1) + ', this)" title="변경 이력 기록 ON/OFF">' + histLabel + '</button>';
             html += '</div>';
         }
 
@@ -77,6 +81,7 @@ async function editProject(id) {
         document.getElementById('project-id').value = id;
         document.getElementById('project-name').value = project.name;
         document.getElementById('project-desc').value = project.description || '';
+        document.getElementById('project-notice').value = project.notice || '';
         document.getElementById('project-start').value = project.start_date || '';
         document.getElementById('project-end').value = project.end_date || '';
 
@@ -103,6 +108,7 @@ async function handleProjectSubmit(e) {
     var data = {
         name: document.getElementById('project-name').value,
         description: document.getElementById('project-desc').value,
+        notice: document.getElementById('project-notice').value,
         start_date: document.getElementById('project-start').value || null,
         end_date: document.getElementById('project-end').value || null,
     };
@@ -134,6 +140,25 @@ async function deleteProject(id, name) {
         loadProjects();
     } catch (e) {
         showToast('삭제에 실패했습니다.', 'error');
+    }
+}
+
+// ===== History Toggle =====
+async function toggleProjectHistory(projectId, nextEnabled, btn) {
+    if (btn) btn.disabled = true;
+    try {
+        var res = await API.patch('/api/projects/' + projectId + '/history-flag', { enabled: !!nextEnabled });
+        var on = !!(res && res.history_enabled);
+        if (btn) {
+            btn.className = on ? 'btn btn-hist-toggle on' : 'btn btn-hist-toggle';
+            btn.textContent = on ? '이력: ON' : '이력: OFF';
+            btn.setAttribute('onclick', 'toggleProjectHistory(' + projectId + ', ' + (on ? 0 : 1) + ', this)');
+        }
+        showToast(on ? '이력 관리 활성화' : '이력 관리 비활성화', 'success');
+    } catch (e) {
+        showToast('변경 실패', 'error');
+    } finally {
+        if (btn) btn.disabled = false;
     }
 }
 

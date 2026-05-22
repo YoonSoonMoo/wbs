@@ -29,7 +29,9 @@ def wbs_view(project_id):
         return redirect(url_for('main.index'))
     project = project_model.get_project(project_id)
     app_version = os.environ.get('VERSION', '')
-    return render_template('wbs.html', project_id=project_id, project_role=role, project_name=project['name'], app_version=app_version)
+    history_enabled = bool(project.get('history_enabled'))
+    notice = (project.get('notice') or '').strip()
+    return render_template('wbs.html', project_id=project_id, project_role=role, project_name=project['name'], app_version=app_version, history_enabled=history_enabled, notice=notice)
 
 
 @main_bp.route('/project/<int:project_id>/gantt')

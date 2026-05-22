@@ -85,6 +85,20 @@ def delete_project(project_id):
     return jsonify({'message': '프로젝트가 삭제되었습니다.'})
 
 
+@api_project_bp.route('/<int:project_id>/history-flag', methods=['PATCH'])
+@api_login_required
+@admin_required
+def set_history_flag(project_id):
+    """프로젝트의 변경 이력 기록 ON/OFF 토글. (admin 전용)"""
+    project = project_model.get_project(project_id)
+    if not project:
+        return jsonify({'error': '프로젝트를 찾을 수 없습니다.'}), 404
+    data = request.get_json() or {}
+    enabled = 1 if data.get('enabled') else 0
+    project_model.update_project(project_id, {'history_enabled': enabled})
+    return jsonify({'id': project_id, 'history_enabled': enabled})
+
+
 @api_project_bp.route('/<int:project_id>/members', methods=['GET'])
 @api_login_required
 def list_project_members(project_id):

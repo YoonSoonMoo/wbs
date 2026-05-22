@@ -46,6 +46,14 @@
 [주요 리스크] 외부 메일 API 연동 일정, Claude CLI 의존성"></textarea>
                 <div class="form-hint">프로젝트 전체 개요와 마일스톤을 기입해 두면, AI 분석 시 전반적 상황 파악과 PM 조언에 활용됩니다.</div>
             </div>
+            <div class="form-group">
+                <label for="project-notice" title="WBS 그리드 상단에 흐르는 텍스트로 표시되는 공지사항입니다.">
+                    공지사항 <span class="label-hint" aria-hidden="true">(그리드 상단 흘림 표시)</span>
+                </label>
+                <textarea id="project-notice" rows="2"
+                          placeholder="예: [5/25 17:00] 마일스톤 M2 점검 회의 — 진행률 100% 미만 항목은 사전 코멘트 부탁드립니다."></textarea>
+                <div class="form-hint">입력한 문구는 WBS 그리드 상단 헤더에 우→좌로 흐르는 알림으로 표시됩니다. (비워두면 표시되지 않음)</div>
+            </div>
             <div class="form-row">
                 <div class="form-group">
                     <label for="project-start">시작일</label>
