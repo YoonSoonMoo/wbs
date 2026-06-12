@@ -86,6 +86,7 @@
         <label class="toolbar-check"><input type="checkbox" id="filterDone" onchange="filterGrid()"> 완료 포함</label>
         <label class="toolbar-check"><input type="checkbox" id="filterMine" onchange="filterGrid()"> 나만의 태스크</label>
         <label class="toolbar-check"><input type="checkbox" id="filterThisWeek" onchange="filterGrid()" title="계획시작일 또는 계획완료일이 이번주(월~일)에 포함된 태스크"> 이번주 태스크</label>
+        <label class="toolbar-check"><input type="checkbox" id="filterDelayed" onchange="filterGrid()" title="계획완료일이 오늘 이전이며 진행률 100% 미만인 태스크"> 지연 태스크</label>
       </div>
       {% if project_role != 'viewer' %}
       <div class="toolbar-sep"></div>
@@ -154,6 +155,9 @@
     <div class="context-menu-item" onclick="insertRowBelow()">↓ 아래에 행 삽입</div>
     <div class="context-menu-sep"></div>
     <div class="context-menu-item" onclick="duplicateRow()">⧉ 행 복제</div>
+    <div class="context-menu-item ctx-move" onclick="event.stopPropagation()">⇄ 행 이동 TID →
+      <input type="number" min="1" id="ctxMoveTid" class="ctx-move-input" placeholder="TID"
+        onkeydown="if(event.key==='Enter'){moveRow(this.value);}"></div>
     <div class="context-menu-sep"></div>
     <div class="context-menu-item danger" id="ctxDeleteSingle" onclick="deleteRow()">✕ 행 삭제</div>
     <div class="context-menu-item danger" id="ctxDeleteSelected" style="display:none" onclick="deleteSelectedRows()">✕

@@ -4,6 +4,7 @@ const ASSIGNEE_COLOR_COUNT = 12;
 let assigneeColorMap = {};
 let rawTimeline = [];
 let currentViewMode = 'Week';
+let excludedAssignees = new Set();   // 간트차트에서 제외할 담당자 (버튼 해제 상태)
 
 async function loadGantt() {
     try {
@@ -15,6 +16,7 @@ async function loadGantt() {
             return;
         }
 
+        excludedAssignees.clear();   // 기본: 모두 선택
         assigneeColorMap = buildAssigneeColorMap(rawTimeline);
         renderAssigneeLegend(assigneeColorMap);
         renderGanttChart();
@@ -30,6 +32,10 @@ function renderGanttChart() {
 
     const tasks = rawTimeline
         .filter(item => includeDone || (item.progress || 0) < 100)
+        .filter(item => {
+            const name = (item.assignee || '').trim();
+            return !name || !excludedAssignees.has(name);   // 담당자 없는 작업은 항상 표시
+        })
         .map(item => {
             const done = (item.progress || 0) >= 100;
             const cls = [assigneeColorClass(item.assignee), done ? 'gantt-done' : '']
@@ -169,9 +175,21 @@ function renderAssigneeLegend(map) {
     if (!legend) return;
     const names = Object.keys(map);
     if (!names.length) { legend.innerHTML = ''; return; }
-    legend.innerHTML = names.map(n =>
-        `<span class="gantt-legend-item"><span class="gantt-legend-dot gantt-assignee-${map[n]}"></span>${n}</span>`
-    ).join('');
+    legend.innerHTML = names.map(n => {
+        const off = excludedAssignees.has(n) ? ' off' : '';
+        return `<button type="button" class="gantt-legend-item${off}" data-assignee="${n}" aria-pressed="${!off}">`
+            + `<span class="gantt-legend-dot gantt-assignee-${map[n]}"></span>${n}</button>`;
+    }).join('');
+    legend.querySelectorAll('.gantt-legend-item').forEach(btn => {
+        btn.addEventListener('click', () => toggleAssigneeFilter(btn.dataset.assignee));
+    });
+}
+
+function toggleAssigneeFilter(name) {
+    if (excludedAssignees.has(name)) excludedAssignees.delete(name);
+    else excludedAssignees.add(name);
+    renderAssigneeLegend(assigneeColorMap);
+    renderGanttChart();
 }
 
 function buildGanttLabel(item) {

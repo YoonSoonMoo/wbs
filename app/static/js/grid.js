@@ -46,14 +46,16 @@ function renderGrid() {
     var showDone = document.getElementById('filterDone') && document.getElementById('filterDone').checked;
     var showMine = document.getElementById('filterMine') && document.getElementById('filterMine').checked;
     var showThisWeek = document.getElementById('filterThisWeek') && document.getElementById('filterThisWeek').checked;
+    var showDelayed = document.getElementById('filterDelayed') && document.getElementById('filterDelayed').checked;
+
+    var todayDate = new Date(); todayDate.setHours(0,0,0,0);
 
     // 이번주(월~일) 범위 계산 (로컬 자정 기준)
     var weekStart = null, weekEnd = null;
     if (showThisWeek) {
-        var t = new Date(); t.setHours(0,0,0,0);
-        var dow = t.getDay(); // 0=일, 1=월, ..., 6=토
+        var dow = todayDate.getDay(); // 0=일, 1=월, ..., 6=토
         var offsetToMon = (dow === 0 ? -6 : 1 - dow);
-        weekStart = new Date(t.getFullYear(), t.getMonth(), t.getDate() + offsetToMon);
+        weekStart = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate() + offsetToMon);
         weekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6);
     }
 
@@ -76,6 +78,13 @@ function renderGrid() {
             else if (pe && !isNaN(pe) && pe >= weekStart && pe <= weekEnd) inWeek = true;
             if (!inWeek) continue;
         }
+        if (showDelayed) {
+            var pr = parseFloat(r.progress) || 0;
+            if (pr >= 100) continue;
+            if (!r.plan_end) continue;
+            var dpe = new Date(r.plan_end + 'T00:00:00');
+            if (isNaN(dpe) || dpe >= todayDate) continue;
+        }
         if (aiFilterIds && aiFilterIds.indexOf(r._id) < 0) continue;
         filtered.push(r);
     }
@@ -93,8 +102,7 @@ function renderGrid() {
     var canEdit = (typeof USER_ROLE !== 'undefined' && USER_ROLE !== 'viewer');
     var ceAttr = canEdit ? ' contenteditable="true"' : '';
     var editClass = canEdit ? 'editable' : '';
-    var canDrag = canEdit && !sortCol && !sv && !showMine && !showThisWeek;
-    var todayDate = new Date(); todayDate.setHours(0,0,0,0);
+    var canDrag = canEdit && !sortCol && !sv && !showMine && !showThisWeek && !showDelayed;
 
     var h = '';
     for (var i = 0; i < filtered.length; i++) {
@@ -141,7 +149,7 @@ function renderGrid() {
     if (filterInfo) {
         // 빠른검색·나만의·AI 필터 중 하나라도 활성이면 length 비교와 무관하게 표시.
         // (완료 포함 체크 시 length가 전체와 같아져도 검색 결과 합계는 보여야 한다)
-        var hasActiveFilter = !!sv || showMine || showThisWeek || (aiFilterIds && aiFilterIds.length > 0);
+        var hasActiveFilter = !!sv || showMine || showThisWeek || showDelayed || (aiFilterIds && aiFilterIds.length > 0);
         var isFiltered = hasActiveFilter || filtered.length !== data.length;
         if (isFiltered) {
             var sumEffort = 0;
@@ -652,6 +660,8 @@ function showContext(e, idx) {
     if (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'viewer') return;
     contextRowIdx = idx;
     var m = document.getElementById('contextMenu');
+    var moveInput = document.getElementById('ctxMoveTid');
+    if (moveInput) moveInput.value = '';
     // Show/hide multi-delete option
     var multiItem = document.getElementById('ctxDeleteSelected');
     var singleItem = document.getElementById('ctxDeleteSingle');
@@ -716,6 +726,20 @@ function duplicateRow() {
         saveSortOrder();
     });
     renderGrid();
+}
+
+function moveRow(value) {
+    var menu = document.getElementById('contextMenu');
+    var tid = parseInt(value, 10);
+    if (isNaN(tid) || tid < 1) { showToast('올바른 TID를 입력하세요.', 'error'); return; }
+    var targetIdx = Math.min(tid - 1, data.length - 1);
+    if (targetIdx === contextRowIdx) { menu.classList.remove('show'); return; }
+    var row = data.splice(contextRowIdx, 1)[0];
+    data.splice(targetIdx, 0, row);
+    saveSortOrder();
+    renderGrid();
+    menu.classList.remove('show');
+    showToast('TID ' + (targetIdx + 1) + ' 위치로 이동했습니다.', 'success');
 }
 
 function deleteRow() {
@@ -1218,7 +1242,25 @@ function renderStatsModal(data) {
     // ── 주차별 진척 현황 (CSS Grid) ──
     h += '<div class="stats-sect" style="margin-top:18px">주차별 진척 현황</div>';
     h += '<div class="stats-grid-wrap">';
-    h += '<div class="stats-grid-hdr"><span>주차</span><span>전체</span><span>신규</span><span>주간완료</span><span>누적완료</span><span title="전체 태스크 중 계획 주차에 맞춰 완료된 비율 (관측 9주 기준)">계획 준수율</span><span>주간 진척률</span><span>전체공수</span><span>완료공수</span></div>';
+    var _tip = function(label, tip) {
+        return '<span>' + label
+            + '<svg class="stats-hdr-help" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">'
+            + '<title>' + tip + '</title>'
+            + '<rect x="0.5" y="0.5" width="15" height="15" rx="3" ry="3" fill="#d8dde8"/>'
+            + '<text x="8" y="12" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="#fff">?</text>'
+            + '</svg></span>';
+    };
+    h += '<div class="stats-grid-hdr">'
+        + '<span>주차</span>'
+        + '<span>전체</span>'
+        + _tip('신규', '해당 주차에 새로 등록된 태스크 수&#10;(created_at 이 해당 주 범위 안에 있는 항목)')
+        + _tip('주간완료', '계획 종료일과 실제 종료일이 모두 해당 주 범위 안에 있는 태스크 수&#10;표기: 완료 / 예정')
+        + _tip('누적완료', '관측 구간 시작 주부터 해당 주차까지 주간완료의 누적 합')
+        + _tip('계획 준수율', '계산식: 누적완료 ÷ 전체 태스크 × 100&#10;전체 태스크 중 계획 주차에 맞춰 완료된 비율 (관측 9주 기준)')
+        + _tip('주간 진척률', '계산식: 주간완료 ÷ 계획완료(예정) × 100&#10;해당 주차에 끝내기로 한 일을 실제로 끝낸 비율')
+        + _tip('전체공수', '해당 주차 기준 누적 전체 공수(d)&#10;옆 +Nd 는 해당 주에 신규 등록된 공수')
+        + _tip('완료공수', '해당 주차에 주간완료된 태스크들의 공수(d) 합')
+        + '</div>';
 
     weekly.forEach(function(w, i) {
         var isCur = (i === 0);
@@ -1477,7 +1519,7 @@ function openHistoryModal() {
     if (searchEl) searchEl.value = '';
     document.getElementById('historyBody').innerHTML = '<tr><td colspan="5" class="history-loading">불러오는 중...</td></tr>';
     document.getElementById('historyMeta').textContent = '-';
-    API.get('/api/wbs/' + PROJECT_ID + '/history?limit=500')
+    API.get('/api/wbs/' + PROJECT_ID + '/history?limit=100')
         .then(function(res) {
             historyItems = (res && res.items) || [];
             renderHistoryRows();
