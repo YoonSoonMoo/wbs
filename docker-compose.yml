@@ -1,0 +1,31 @@
+services:
+  wbs:
+    build: .
+    restart: unless-stopped
+    environment:
+      # 런타임 설정
+      FLASK_ENV: production
+      HOST: 0.0.0.0
+      PORT: 5000
+      DATABASE_PATH: instance/wbs.db
+      # 비밀값은 Coolify UI(Environment Variables)에서 주입 — 코드/깃에 커밋하지 말 것
+      SECRET_KEY: ${SECRET_KEY}
+      ADMIN_NAME: ${ADMIN_NAME}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      VERSION: ${VERSION:-Ver 0.97}
+    volumes:
+      # SQLite DB 영속화 — 재배포/재시작에도 데이터 유지
+      - wbs-data:/app/instance
+    ports:
+      # Coolify 프록시가 도메인 → 5000 으로 라우팅한다.
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  wbs-data:

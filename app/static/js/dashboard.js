@@ -323,5 +323,42 @@ async function toggleUserActive(userId, nextActive) {
     }
 }
 
+// ===== 백업/복원 (admin only) =====
+function openBackupModal() {
+    document.getElementById('backup-modal').style.display = 'flex';
+}
+
+function closeBackupModal() {
+    document.getElementById('backup-modal').style.display = 'none';
+}
+
+function downloadBackup() {
+    window.location.href = '/api/admin/backup';
+}
+
+async function restoreBackup() {
+    var input = document.getElementById('restore-file');
+    if (!input.files || !input.files[0]) {
+        showToast('복원할 백업 파일을 선택하세요.', 'error');
+        return;
+    }
+    if (!confirm('현재 모든 데이터를 업로드한 백업으로 덮어씁니다.\n이 작업은 되돌릴 수 없습니다. 계속하시겠습니까?')) return;
+
+    var fd = new FormData();
+    fd.append('file', input.files[0]);
+    try {
+        var res = await fetch('/api/admin/restore', { method: 'POST', body: fd });
+        var result = await res.json();
+        if (!res.ok) {
+            showToast(result.error || '복원에 실패했습니다.', 'error');
+            return;
+        }
+        showToast('복원 완료. 새로고침합니다.', 'success');
+        setTimeout(function() { location.reload(); }, 1000);
+    } catch (e) {
+        showToast('복원 중 오류가 발생했습니다.', 'error');
+    }
+}
+
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', loadProjects);

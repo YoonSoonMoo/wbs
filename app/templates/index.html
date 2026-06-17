@@ -8,6 +8,7 @@
         {% if user_role == 'admin' %}
         <div style="display:flex;gap:8px;">
             <button class="btn" onclick="openUserMgmtModal()">유저 관리</button>
+            <button class="btn" onclick="openBackupModal()">백업/복원</button>
             <button class="btn btn-primary" onclick="showCreateProjectModal()">+ 새 프로젝트</button>
         </div>
         {% endif %}
@@ -111,6 +112,30 @@
                     </tr>
                 </tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<!-- 백업/복원 모달 -->
+<div id="backup-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>데이터 백업/복원</h2>
+            <button class="modal-close" onclick="closeBackupModal()">&times;</button>
+        </div>
+        <div class="form-group">
+            <label>백업 다운로드</label>
+            <div class="form-hint">현재 전체 데이터(프로젝트·WBS·유저·이력 등)를 단일 DB 파일로 내려받습니다.</div>
+            <button class="btn btn-primary" onclick="downloadBackup()" style="margin-top:8px;">백업 다운로드</button>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
+        <div class="form-group">
+            <label>백업 복원</label>
+            <div class="form-hint" style="color:var(--danger)">업로드한 백업으로 <b>현재 모든 데이터를 덮어씁니다.</b> 이 작업은 되돌릴 수 없습니다.</div>
+            <input type="file" id="restore-file" accept=".db,.sqlite,application/octet-stream" style="margin-top:8px;">
+            <div class="form-actions">
+                <button class="btn" style="color:var(--danger)" onclick="restoreBackup()">복원 실행</button>
+            </div>
         </div>
     </div>
 </div>

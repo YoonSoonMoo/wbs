@@ -1,0 +1,27 @@
+# 빌드 컨텍스트에서 제외 — 이미지에 들어가면 안 되는 것들
+.git
+.gitignore
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+.pytest_cache
+
+# 로컬 비밀/데이터 (컨테이너에선 env + 볼륨으로 주입)
+.env
+instance/
+*.db
+*.sqlite
+
+# 개발 산물
+.idea
+.vscode
+*.swp
+*.swo
+
+# 문서/테스트 (런타임 불필요)
+tests/
+handoff.md
+README.md
+.claude/
