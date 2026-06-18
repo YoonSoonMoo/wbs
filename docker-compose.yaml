@@ -2,18 +2,20 @@ services:
   wbs:
     build: .
     restart: unless-stopped
+    # SECRET_KEY / ADMIN_* / VERSION 등은 .env에 정의된 값이 컨테이너로 직접 주입된다.
+    # .env에 없는 변수는 설정되지 않아 코드 기본값(app/config.py)이 사용된다.
+    # ($\{VAR} 방식과 달리 미설정 변수가 빈 문자열로 덮어써지지 않는다.)
+    # Coolify는 UI에 등록한 Environment Variables를 배포 시 .env로 생성한다.
+    # required: false → .env가 없어도(로컬 신규 클론 등) 코드 기본값으로 기동된다.
+    env_file:
+      - path: .env
+        required: false
     environment:
-      # 런타임 설정
+      # 런타임 고정값 — .env의 개발용 값(FLASK_ENV=development 등)을 덮어쓴다.
       FLASK_ENV: production
       HOST: 0.0.0.0
       PORT: 5000
       DATABASE_PATH: instance/wbs.db
-      # 비밀값은 Coolify UI(Environment Variables)에서 주입 — 코드/깃에 커밋하지 말 것
-      SECRET_KEY: ${SECRET_KEY}
-      ADMIN_NAME: ${ADMIN_NAME}
-      ADMIN_EMAIL: ${ADMIN_EMAIL}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      VERSION: ${VERSION:-Ver 0.97}
     volumes:
       # SQLite DB 영속화 — 재배포/재시작에도 데이터 유지
       - wbs-data:/app/instance
