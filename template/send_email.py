@@ -113,11 +113,11 @@ def send_mail_html(access_key: str, secret_key: str, payload: dict, html_file_pa
 
 if __name__ == "__main__":
     # 환경변수에서 키 가져오기
-    ACCESS_KEY = os.getenv("NAVER-API-ACCESS-KEY")
-    SECRET_KEY = os.getenv("NAVER-API-SECRET-KEY")
+    ACCESS_KEY = os.getenv("NAVER_API_ACCESS_KEY")
+    SECRET_KEY = os.getenv("NAVER_API_SECRET_KEY")
 
     if not ACCESS_KEY or not SECRET_KEY:
-        print("❌ Error: .env 파일에 'NAVER-API-ACCESS-KEY' 또는 'NAVER-API-SECRET-KEY'가 설정되지 않았습니다.")
+        print("❌ Error: .env 파일에 'NAVER_API_ACCESS_KEY' 또는 'NAVER_API_SECRET_KEY'가 설정되지 않았습니다.")
         exit(1)
 
     # ⚠️ payload는 실제 NCP Mailer 스펙에 맞게 구성해야 합니다.

@@ -90,7 +90,7 @@ def send_mail(
 
 def _get_keys() -> tuple[str | None, str | None]:
     """환경변수에서 NCP 키를 읽는다."""
-    return os.environ.get("NAVER-API-ACCESS-KEY"), os.environ.get("NAVER-API-SECRET-KEY")
+    return os.environ.get("NAVER_API_ACCESS_KEY"), os.environ.get("NAVER_API_SECRET_KEY")
 
 
 def send_html_mail(
