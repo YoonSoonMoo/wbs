@@ -1,6 +1,14 @@
+import hashlib
+import secrets
+
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.extensions import get_db
+
+
+def _hash_api_token(token):
+    """API 토큰을 SHA-256 16진 해시로 변환한다 (고엔트로피 토큰이라 솔트 불필요)."""
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
 
 
 def register_user(name, email, password, role='viewer'):
@@ -75,6 +83,38 @@ def set_user_active(user_id, is_active):
     db = get_db()
     db.execute("UPDATE user SET is_active = ? WHERE id = ?", (1 if is_active else 0, user_id))
     db.commit()
+
+
+def generate_api_token(user_id):
+    """유저의 API 토큰을 새로 발급한다. 평문 토큰을 1회 반환하며, DB에는 해시만 저장한다."""
+    token = secrets.token_urlsafe(32)
+    db = get_db()
+    db.execute(
+        "UPDATE user SET api_token_hash = ? WHERE id = ?",
+        (_hash_api_token(token), user_id),
+    )
+    db.commit()
+    return token
+
+
+def revoke_api_token(user_id):
+    """유저의 API 토큰을 폐기한다."""
+    db = get_db()
+    db.execute("UPDATE user SET api_token_hash = NULL WHERE id = ?", (user_id,))
+    db.commit()
+
+
+def get_user_by_api_token(token):
+    """API 토큰으로 활성 유저를 조회한다. 토큰이 없거나 비활성 계정이면 None."""
+    if not token:
+        return None
+    db = get_db()
+    row = db.execute(
+        "SELECT id, name, email, role, is_active FROM user "
+        "WHERE api_token_hash = ? AND is_active = 1",
+        (_hash_api_token(token),),
+    ).fetchone()
+    return dict(row) if row else None
 
 
 _ROLE_LEVEL = {'viewer': 0, 'developer': 1, 'admin': 2}

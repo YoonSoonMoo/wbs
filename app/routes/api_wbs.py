@@ -1,4 +1,4 @@
-from flask import Blueprint, g, jsonify, request, session
+from flask import Blueprint, g, jsonify, request
 
 from app.auth import api_login_required, project_access_required
 from app.models import change_history, wbs_item as wbs_model
@@ -14,7 +14,7 @@ def _check_item_write(item_id):
     item = wbs_model.get_item(item_id)
     if not item:
         return None, jsonify({'error': '항목을 찾을 수 없습니다.'}), 404
-    role = get_project_role(session['user_id'], item['project_id'])
+    role = get_project_role(g.user['id'], item['project_id'])
     if not role or role == 'viewer':
         return None, jsonify({'error': '권한이 부족합니다.'}), 403
     return item, None, None
@@ -64,7 +64,7 @@ def update_item(item_id):
     data = request.get_json()
     if not data:
         return jsonify({'error': '수정할 데이터가 없습니다.'}), 400
-    result = wbs_service.update_item(item_id, data, updated_by=session.get('user_name', ''))
+    result = wbs_service.update_item(item_id, data, updated_by=g.user['name'])
     return jsonify(result)
 
 
@@ -77,7 +77,7 @@ def patch_item(item_id):
     data = request.get_json()
     if not data:
         return jsonify({'error': '수정할 데이터가 없습니다.'}), 400
-    result = wbs_service.update_item(item_id, data, updated_by=session.get('user_name', ''))
+    result = wbs_service.update_item(item_id, data, updated_by=g.user['name'])
     return jsonify(result)
 
 
@@ -111,7 +111,7 @@ def batch_update(project_id):
     data = request.get_json()
     if not data or not isinstance(data.get('items'), list):
         return jsonify({'error': '항목 목록이 필요합니다.'}), 400
-    results = wbs_service.batch_update(project_id, data['items'], updated_by=session.get('user_name', ''))
+    results = wbs_service.batch_update(project_id, data['items'], updated_by=g.user['name'])
     return jsonify(results)
 
 
@@ -272,7 +272,7 @@ def ai_assistant(project_id):
         return jsonify({'success': False, 'message': '질의를 입력해주세요.'}), 400
 
     user_query = data['query'].strip()
-    role = get_project_role(session['user_id'], project_id)
+    role = get_project_role(g.user['id'], project_id)
 
     # viewer는 조회만 가능
     result = ai_process_command(project_id, user_query)

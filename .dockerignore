@@ -25,3 +25,6 @@ tests/
 handoff.md
 README.md
 .claude/
+
+# CLI 스킬 배포 산출물 (서버 런타임 불필요, env.json 토큰 유입 차단)
+skills/

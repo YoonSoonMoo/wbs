@@ -281,6 +281,7 @@ async function loadUserMgmtList() {
                 + '<td>' + activeBadge + '</td>'
                 + '<td><div class="user-action-btns">'
                 + '<button class="btn" onclick="resetUserPw(' + u.id + ', \'' + emailAttr + '\')">PW 리셋</button>'
+                + '<button class="btn" onclick="issueApiToken(' + u.id + ', \'' + emailAttr + '\')">토큰 발급</button>'
                 + '<button class="' + toggleClass + '" onclick="toggleUserActive(' + u.id + ', ' + (u.is_active ? 0 : 1) + ')"' + toggleDisabled + '>' + toggleLabel + '</button>'
                 + '</div></td>'
                 + '</tr>';
@@ -308,6 +309,16 @@ async function resetUserPw(userId, email) {
         showToast('임시 비밀번호가 이메일로 전송되었습니다.', 'success');
     } catch (e) {
         showToast('비밀번호 초기화 실패', 'error');
+    }
+}
+
+async function issueApiToken(userId, email) {
+    if (!confirm(email + ' 계정의 API 토큰을 발급하시겠습니까?\n기존 토큰이 있으면 즉시 무효화되며, 새 토큰은 이메일로 전송됩니다.')) return;
+    try {
+        await API.post('/api/users/' + userId + '/api-token', {});
+        showToast('API 토큰이 이메일로 전송되었습니다.', 'success');
+    } catch (e) {
+        showToast('토큰 발급 실패', 'error');
     }
 }
 
