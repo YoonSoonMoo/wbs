@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | https://github.com/YoonSoonMoo/wbs.git |
-| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인, Gantt 담당자 색상/완료 필터/오늘 세로선, 워크쓰루 투어), 2026-04-22 (패스워드 리셋 강제 변경 플로우), 2026-04-23 (API 테스트 스위트, 프로젝트 개요 AI 주입, 주간 통계 공수 기준 진척률, 랜딩 AI 쇼케이스), 2026-04-30 (그리드 컬럼 리사이즈, 정렬 버튼 분리, 지연 판단 보정, 푸터 필터 정보, 권한 단일관리, 대시보드 진행률 공수가중 통일), 2026-05-07 (Gantt 일자 정규화 버그 수정, 로고 교체 logo.png → logo2.png, footer 필터 정보 표시 조건 보강), 2026-05-15 (WBS 변경 이력 추적 시스템, AI 어시스턴트 move 액션), 2026-05-22 (프로젝트 공지사항 marquee — 그리드 상단 우→좌 흐름 표시), 2026-05-26 (주간 진척 통계 표 헤더 [?] 툴팁 SVG 아이콘, 빠른검색 "지연 태스크" 필터 추가), 2026-06-10 (Gantt 담당자 범례 → 필터 토글 버튼, 버전 0.96), 2026-06-12 (그리드 우클릭 "행 이동 TID" 메뉴) |
+| 작업일 | 2026-04-10 (초기), 2026-04-13 (그리드 UX 개선), 2026-04-14 (버그수정/Gantt 한국어), 2026-04-15 (AI 어시스턴트, UI 개선, 통계 버그수정), 2026-04-16 (주간 진척 통계, 지연 메일 알림), 2026-04-17 (주간 통계 지표 재정의, 유저 관리 기능, 역할 리네이밍, 역할 게이팅, 랜딩/로그인 브랜드, 로고·파비콘, 회원가입 비밀번호 확인, Gantt 담당자 색상/완료 필터/오늘 세로선, 워크쓰루 투어), 2026-04-22 (패스워드 리셋 강제 변경 플로우), 2026-04-23 (API 테스트 스위트, 프로젝트 개요 AI 주입, 주간 통계 공수 기준 진척률, 랜딩 AI 쇼케이스), 2026-04-30 (그리드 컬럼 리사이즈, 정렬 버튼 분리, 지연 판단 보정, 푸터 필터 정보, 권한 단일관리, 대시보드 진행률 공수가중 통일), 2026-05-07 (Gantt 일자 정규화 버그 수정, 로고 교체 logo.png → logo2.png, footer 필터 정보 표시 조건 보강), 2026-05-15 (WBS 변경 이력 추적 시스템, AI 어시스턴트 move 액션), 2026-05-22 (프로젝트 공지사항 marquee — 그리드 상단 우→좌 흐름 표시), 2026-05-26 (주간 진척 통계 표 헤더 [?] 툴팁 SVG 아이콘, 빠른검색 "지연 태스크" 필터 추가), 2026-06-10 (Gantt 담당자 범례 → 필터 토글 버튼, 버전 0.96), 2026-06-12 (그리드 우클릭 "행 이동 TID" 메뉴), 2026-06-25 (Claude CLI 연동 — API 토큰 인증 + wbs-report 스킬, 날짜 하이픈 yy-mm-dd 프론트 변환, 빠른검색 AND 추가조건, 퀵서치 필터 localStorage 유지, 계획시작 우선 정렬) |
 
 ## 2. 기술 스택
 
@@ -89,9 +89,12 @@ wbs/
 │   ├── 009_normalize_dates.sql  # 'YY-MM-DD'로 잘못 저장된 일자 컬럼을 '20YY-MM-DD'로 일괄 정정
 │   ├── 010_change_history.sql   # wbs_change_history 테이블 (변경 이력 추적, 6개 필드 모니터링)
 │   ├── 011_project_history_flag.sql # project.history_enabled 플래그 (프로젝트별 이력 기록 ON/OFF, 기본 0)
-│   └── 012_project_notice.sql   # project.notice 컬럼 (그리드 상단 marquee 공지사항, 기본 '')
+│   ├── 012_project_notice.sql   # project.notice 컬럼 (그리드 상단 marquee 공지사항, 기본 '')
+│   └── 013_api_token.sql        # user.api_token_hash 컬럼 + 인덱스 (외부 클라이언트 API 토큰, SHA-256)
 ├── instance/                    # SQLite DB 파일 (자동 생성, gitignore 대상)
-├── tests/                       # pytest API 테스트 스위트 (conftest + 8개 파일, 67건)
+├── tests/                       # pytest API 테스트 스위트 (conftest + 9개 파일, 77건)
+├── skills/
+│   └── wbs-report/              # Claude CLI 연동 스킬 (SKILL.md/README.md/report.py/env.sample.json, 개발자 PC로 복사해 사용. env.json은 토큰 포함 gitignore)
 ├── template/
 │   └── wbs-manage.html          # UI 레퍼런스 원본 (단독 HTML, localStorage 기반)
 ├── .venv/                       # Python 가상환경
@@ -153,6 +156,7 @@ wbs/
 | role | TEXT | 전역 역할 (admin/developer/viewer), CHECK 제약 적용 |
 | is_active | INTEGER | 활성 여부 (1=활성, 0=비활성). 비활성 계정은 로그인 차단 |
 | requires_password_change | INTEGER | 임시 비밀번호 강제 변경 플래그 (1=강제) |
+| api_token_hash | TEXT | 외부 클라이언트(Claude CLI 등) API 토큰의 SHA-256 해시 (평문 미저장, NULL=미발급). `idx_user_api_token` 인덱스 |
 | created_at | TEXT | 생성일시 |
 
 ### project_member 테이블 (프로젝트 멤버 매핑)
@@ -256,6 +260,9 @@ wbs/
 | POST | `/api/users/<id>/reset-password` | 비밀번호 리셋 — body `{password: "..."}` (4자 이상) |
 | PUT | `/api/users/<id>/active` | 활성/비활성 토글 — body `{is_active: 0\|1}` (본인 비활성화 금지) |
 | PUT | `/api/users/me/password` | 본인 비밀번호 변경 — body `{password: "..."}` (4자 이상, `requires_password_change` 플래그 해제) |
+| GET | `/api/users/me` | 현재 인증 주체(세션/API 토큰)의 `{id, name, email, role}` 반환. 외부 클라이언트가 담당자명 식별용 (admin 외 모든 로그인 유저 가능) |
+| POST | `/api/users/<id>/api-token` | (admin) 해당 유저 API 토큰 발급 → 평문은 **이메일로만** 전송(응답 미포함, 비밀번호 리셋과 동일 정책). 재발급 시 기존 토큰 즉시 무효화 |
+| DELETE | `/api/users/<id>/api-token` | (admin) 해당 유저 API 토큰 폐기 (`api_token_hash` → NULL) |
 
 ### Import/Export API (`/api/io`)
 | Method | URL | 설명 |
@@ -303,6 +310,7 @@ wbs/
 - 서버 최초 실행 시 기본 관리자 자동 생성: `yoonsm@daou.co.kr` / `zaq12wsx` (이름: 윤순무)
 - 데코레이터 패턴: `@login_required` (페이지), `@api_login_required` (API), `@project_access_required(min_role)`, `@admin_required`
 - 프론트엔드: viewer일 때 편집 버튼 숨김 + contenteditable 비활성화 + 컨텍스트메뉴 차단 + API 403 응답 처리
+- **API 토큰 인증 (2026-06-25)**: API 데코레이터는 `Authorization: Bearer <token>`(SHA-256 해시 대조) 또는 세션 중 하나로 `g.user`를 해석한다. 토큰은 admin이 유저별로 발급해 이메일로 전달(평문 미저장), 권한은 동일하게 `user.role` 기준. Claude CLI 등 외부 클라이언트가 세션 없이 동일 권한 체계로 API를 호출한다. 자세한 흐름은 §8 "Claude CLI 연동" 참조
 
 ### AI 어시스턴트: Claude CLI subprocess 방식
 
@@ -707,6 +715,27 @@ python run.py
     - `moveRow(value)` — 입력 TID(1-based)를 인덱스로 변환, `data` 배열에서 `contextRowIdx` 행을 splice로 빼낸 뒤 목표 위치에 삽입 → `saveSortOrder()` + `renderGrid()`. 입력 TID 번호가 곧 이동 후 행 번호가 되는 의미
     - 범위 초과는 마지막 행으로 클램프, 잘못된 값은 토스트 안내, 동일 위치는 무동작. `showContext()`에서 메뉴 열 때마다 입력란 초기화
     - 메뉴 항목 클릭 시 `event.stopPropagation()`으로 document 클릭 닫힘 핸들러 차단(입력 중 메뉴 유지). CSS `.ctx-move`/`.ctx-move-input`로 flex 정렬·입력란 스타일
+
+- [x] Claude CLI 연동 — API 토큰 인증 + wbs-report 스킬 (2026-06-25):
+  - [x] **API 토큰 인증** — 외부 클라이언트(Claude CLI)가 세션 없이 WBS API를 호출하도록 지원:
+    - 마이그레이션 `013_api_token.sql` — `user.api_token_hash TEXT` + `idx_user_api_token` 인덱스. 고엔트로피 랜덤 토큰을 SHA-256 해시로 저장(평문 미저장, `secrets.token_urlsafe(32)`)
+    - `auth_service.py` — `generate_api_token`(발급, 평문 1회 반환)·`revoke_api_token`·`get_user_by_api_token`(활성 유저만), `_hash_api_token` 헬퍼
+    - `auth.py` — `Authorization: Bearer <token>` 헤더 우선 해석 후 없으면 세션. `api_login_required`/`project_access_required`/`admin_required`를 모두 `g.user` 단일 기준으로 통일(`_resolve_api_user`). 토큰·세션이 동일 권한 경로를 타도록 일원화
+    - `api_wbs.py` — 기존 `session['user_id']`/`session['user_name']` 참조를 `g.user`로 교체. 신규 조회/갱신 엔드포인트 없이 기존 `GET /items`·`PATCH /items/<id>`를 토큰으로 재사용
+    - `api_users.py` — `GET /api/users/me`(담당자 식별), `POST/DELETE /api/users/<id>/api-token`(admin 발급/폐기). 발급 시 평문 토큰은 **이메일로만** 전송(응답 미포함, 비밀번호 리셋과 동일 정책), 메일 실패 시 502
+    - `dashboard.js` — 유저 관리 모달 각 행에 "토큰 발급" 버튼(`issueApiToken`). 확인 다이얼로그에 재발급=기존 무효화 안내, 발송 후 토스트
+    - 테스트 `tests/test_api_token.py` 10건 (토큰 인증·발급 이메일·admin 게이팅·폐기·권한 차단). 전체 스위트 67→77건 통과
+  - [x] **wbs-report 스킬** (`skills/wbs-report/`) — 개발자 PC의 Claude CLI에서 "wbs에 반영해줘"로 본인 당일 작업을 갱신:
+    - `SKILL.md` — 조회/리포팅(읽기 전용) + 반영(갱신) 2모드. ①`/me` 담당자 확인 → ②`/items` 이번주 본인 담당 필터 → ③handoff.md(보조 git) 당일 작업 파악 → ④매칭 제안 → ⑤진척률 질문 → ⑥`PATCH` 갱신 → ⑦결과 보고. 확인 없는 자동 갱신 금지
+    - `report.py` — 표준 라이브러리만 사용하는 조회 헬퍼(지연/이번주 정렬·요약, UTF-8 stdout 재설정으로 Windows 한글 깨짐 방지)
+    - 설정은 스킬 디렉토리 `env.json`(url/project_id/token) 단일 파일. 토큰 포함이라 **gitignore**(`skills/wbs-report/env.json`), 커밋용은 `env.sample.json`. `.dockerignore`에 `skills/` 추가(서버 이미지 토큰 유입 차단)
+    - PATCH 시 한글·특수문자(em-dash 등) status는 셸 인용 대신 페이로드 파일 `--data-binary @file` + `charset=utf-8` 권장(Windows 셸 인용 깨짐 실측)
+
+- [x] 그리드 날짜 입력·검색·필터 개선 (2026-06-25):
+  - [x] **하이픈 `yy-mm-dd` 프론트 변환** (`app/static/js/grid.js` `parseDate`): 점(`26.06.25`)·슬래시는 변환하나 하이픈 2자리 연도(`26-06-25`)는 누락돼 있던 것을 보완. `/^(\d{2})-(\d{1,2})-(\d{1,2})$/` 패턴 추가 → `26-06-25`·`26-6-25` 모두 `2026-...`로 즉시 변환. 백엔드 `_normalize_date`(`wbs_item.py`, `^(\d{2})-(\d{2})-(\d{2})$`)는 저장 시 이중 방어선으로 유지(날짜 컬럼은 TEXT라 형식 일관성이 정렬·지연판정·Gantt에 직결)
+  - [x] **빠른검색 AND 추가조건** (`wbs.html`, `grid.js`): `빠른검색 [ ] AND [ ]` — `searchInput2` 신설. 두 입력을 `searchTerms` 배열로 모아 AND 결합(각 검색어가 행의 어느 컬럼에든 매칭되면 통과). 단독 입력 시 기존과 동일(회귀 없음). `hasActiveFilter`·`canDrag`에 반영
+  - [x] **퀵서치 체크박스 필터 localStorage 유지** (`grid.js`): 완료 포함/나만의/이번주/지연/계획시작 우선 5개 체크 상태를 `wbs_filters_v1_p<PROJECT_ID>`에 프로젝트별 저장(`saveFilterState`), `DOMContentLoaded`에서 `loadItems` 전 복원(`restoreFilterState`). 리로드해도 체크 유지(기존 컬럼폭 저장과 동일 패턴)
+  - [x] **계획시작 우선 정렬** (`wbs.html`, `grid.js`): `#filterPlanStartSort` 체크 시 TID 순 대신 `plan_start` 오름차순(빠른 날짜 위, 계획시작 없는 행은 맨 아래). 우선순위는 컬럼 헤더 정렬(sortCol) > 계획시작 우선 > TID(원본). plan_start가 `YYYY-MM-DD` TEXT라 문자열 비교로 날짜순 정확
 
 ## 9. 미구현 / 향후 작업
 

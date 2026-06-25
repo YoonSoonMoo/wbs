@@ -43,10 +43,14 @@ function esc(s) {
 function renderGrid() {
     var tbody = document.getElementById('wbsBody');
     var sv = (document.getElementById('searchInput').value || '').toLowerCase();
+    var sv2El = document.getElementById('searchInput2');
+    var sv2 = ((sv2El && sv2El.value) || '').toLowerCase();
+    var searchTerms = [sv, sv2].filter(Boolean); // 빈 입력 제외, 남은 검색어는 AND 결합
     var showDone = document.getElementById('filterDone') && document.getElementById('filterDone').checked;
     var showMine = document.getElementById('filterMine') && document.getElementById('filterMine').checked;
     var showThisWeek = document.getElementById('filterThisWeek') && document.getElementById('filterThisWeek').checked;
     var showDelayed = document.getElementById('filterDelayed') && document.getElementById('filterDelayed').checked;
+    var showPlanStartSort = document.getElementById('filterPlanStartSort') && document.getElementById('filterPlanStartSort').checked;
 
     var todayDate = new Date(); todayDate.setHours(0,0,0,0);
 
@@ -63,10 +67,14 @@ function renderGrid() {
 
     for (var i = 0; i < data.length; i++) {
         var r = data[i]; r._idx = i;
-        if (sv) {
-            var found = false;
-            for (var k in r) { if (String(r[k]).toLowerCase().indexOf(sv) >= 0) { found = true; break; } }
-            if (!found) continue;
+        if (searchTerms.length) {
+            var matchAll = true;
+            for (var t = 0; t < searchTerms.length; t++) {
+                var found = false;
+                for (var k in r) { if (String(r[k]).toLowerCase().indexOf(searchTerms[t]) >= 0) { found = true; break; } }
+                if (!found) { matchAll = false; break; }
+            }
+            if (!matchAll) continue;
         }
         if (!showDone && (parseFloat(r.progress) || 0) >= 100) continue;
         if (showMine && (typeof USER_NAME !== 'undefined') && r.assignee !== USER_NAME) continue;
@@ -97,12 +105,21 @@ function renderGrid() {
             if (sortCol === 'progress' || sortCol === 'effort' || sortCol === '_idx') { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
             return sortDir === 'asc' ? (va < vb ? -1 : va > vb ? 1 : 0) : (va > vb ? -1 : va < vb ? 1 : 0);
         });
+    } else if (showPlanStartSort) {
+        // 컬럼 헤더 정렬이 없을 때만: 계획시작일 빠른 순(오름차순). 계획시작 없는 행은 맨 아래.
+        filtered.sort(function(a, b) {
+            var va = a.plan_start || '', vb = b.plan_start || '';
+            if (!va && !vb) return 0;
+            if (!va) return 1;
+            if (!vb) return -1;
+            return va < vb ? -1 : va > vb ? 1 : 0;
+        });
     }
 
     var canEdit = (typeof USER_ROLE !== 'undefined' && USER_ROLE !== 'viewer');
     var ceAttr = canEdit ? ' contenteditable="true"' : '';
     var editClass = canEdit ? 'editable' : '';
-    var canDrag = canEdit && !sortCol && !sv && !showMine && !showThisWeek && !showDelayed;
+    var canDrag = canEdit && !sortCol && !sv && !sv2 && !showMine && !showThisWeek && !showDelayed && !showPlanStartSort;
 
     var h = '';
     for (var i = 0; i < filtered.length; i++) {
@@ -149,7 +166,7 @@ function renderGrid() {
     if (filterInfo) {
         // 빠른검색·나만의·AI 필터 중 하나라도 활성이면 length 비교와 무관하게 표시.
         // (완료 포함 체크 시 length가 전체와 같아져도 검색 결과 합계는 보여야 한다)
-        var hasActiveFilter = !!sv || showMine || showThisWeek || showDelayed || (aiFilterIds && aiFilterIds.length > 0);
+        var hasActiveFilter = !!sv || !!sv2 || showMine || showThisWeek || showDelayed || (aiFilterIds && aiFilterIds.length > 0);
         var isFiltered = hasActiveFilter || filtered.length !== data.length;
         if (isFiltered) {
             var sumEffort = 0;
@@ -365,7 +382,29 @@ function deleteSelectedRows() {
     showToast(indices.length + '개 행이 삭제되었습니다.', 'success');
 }
 
-function filterGrid() { renderGrid(); }
+// 빠른검색 우측 체크박스 필터 — localStorage에 프로젝트별 저장/복원
+var FILTER_CHECK_IDS = ['filterDone', 'filterMine', 'filterThisWeek', 'filterDelayed', 'filterPlanStartSort'];
+function _filterStorageKey() {
+    return 'wbs_filters_v1_p' + (typeof PROJECT_ID !== 'undefined' ? PROJECT_ID : 'default');
+}
+function saveFilterState() {
+    var state = {};
+    FILTER_CHECK_IDS.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) state[id] = el.checked;
+    });
+    try { localStorage.setItem(_filterStorageKey(), JSON.stringify(state)); } catch (e) {}
+}
+function restoreFilterState() {
+    var state;
+    try { state = JSON.parse(localStorage.getItem(_filterStorageKey()) || '{}') || {}; } catch (e) { state = {}; }
+    FILTER_CHECK_IDS.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el && typeof state[id] === 'boolean') el.checked = state[id];
+    });
+}
+
+function filterGrid() { saveFilterState(); renderGrid(); }
 
 // ===== Date Parsing =====
 var DATE_COLS = ['plan_start', 'plan_end', 'actual_start', 'actual_end'];
@@ -385,6 +424,10 @@ function parseDate(s) {
 
     // yy.M.d or yy.MM.dd (2-digit year)
     r = s.match(/^(\d{2})\.(\d{1,2})\.(\d{1,2})$/);
+    if (r) { y = 2000 + parseInt(r[1]); m = parseInt(r[2]); d = parseInt(r[3]); return fmtDate(y, m, d); }
+
+    // yy-M-d or yy-MM-dd (2-digit year, hyphen)
+    r = s.match(/^(\d{2})-(\d{1,2})-(\d{1,2})$/);
     if (r) { y = 2000 + parseInt(r[1]); m = parseInt(r[2]); d = parseInt(r[3]); return fmtDate(y, m, d); }
 
     // MM.dd (no year)
@@ -1172,6 +1215,7 @@ function initColumnResize() {
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', function() {
     initColumnResize();
+    restoreFilterState();
     loadItems();
 });
 

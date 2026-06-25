@@ -80,6 +80,8 @@
       <div class="toolbar-group">
         <span class="toolbar-label">빠른검색</span>
         <input type="text" class="search-box" placeholder="업무, 담당자, 세부항목..." id="searchInput" oninput="filterGrid()">
+        <span class="toolbar-label">AND</span>
+        <input type="text" class="search-box" placeholder="추가 조건..." id="searchInput2" oninput="filterGrid()">
       </div>
       <div class="toolbar-sep"></div>
       <div class="toolbar-group">
@@ -87,6 +89,7 @@
         <label class="toolbar-check"><input type="checkbox" id="filterMine" onchange="filterGrid()"> 나만의 태스크</label>
         <label class="toolbar-check"><input type="checkbox" id="filterThisWeek" onchange="filterGrid()" title="계획시작일 또는 계획완료일이 이번주(월~일)에 포함된 태스크"> 이번주 태스크</label>
         <label class="toolbar-check"><input type="checkbox" id="filterDelayed" onchange="filterGrid()" title="계획완료일이 오늘 이전이며 진행률 100% 미만인 태스크"> 지연 태스크</label>
+        <label class="toolbar-check"><input type="checkbox" id="filterPlanStartSort" onchange="filterGrid()" title="TID 순 대신 계획시작일 빠른 순으로 정렬 (계획시작 없는 행은 맨 아래)"> 계획시작 우선</label>
       </div>
       {% if project_role != 'viewer' %}
       <div class="toolbar-sep"></div>
