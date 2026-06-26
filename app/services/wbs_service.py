@@ -441,10 +441,35 @@ def get_weekly_stats(project_id, num_weeks=8):
         (project_id,),
     ).fetchall()
 
+    # 중분류(Task)별 현황 — 완료/총건수, 담당자 목록, 계획시작 최초·계획완료 최종
+    rows_task = db.execute(
+        """SELECT task_name,
+               COUNT(*) as total,
+               SUM(CASE WHEN progress = 100 THEN 1 ELSE 0 END) as completed,
+               MIN(CASE WHEN plan_start != '' THEN plan_start END) as plan_start_min,
+               MAX(CASE WHEN plan_end != '' THEN plan_end END) as plan_end_max
+           FROM wbs_item WHERE project_id = ? AND task_name != ''
+           GROUP BY task_name ORDER BY MIN(sort_order)""",
+        (project_id,),
+    ).fetchall()
+
+    tasks = []
+    for r in rows_task:
+        assignees = db.execute(
+            """SELECT DISTINCT assignee FROM wbs_item
+               WHERE project_id = ? AND task_name = ? AND assignee != ''
+               ORDER BY assignee""",
+            (project_id, r['task_name']),
+        ).fetchall()
+        d = dict(r)
+        d['assignees'] = [a['assignee'] for a in assignees]
+        tasks.append(d)
+
     return {
         'overview': overview,
         'weekly': result,
         'assignees': [dict(r) for r in rows_assignee],
+        'tasks': tasks,
     }
 
 

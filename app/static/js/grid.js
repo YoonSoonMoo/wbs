@@ -1264,6 +1264,7 @@ function renderStatsModal(data) {
     var ov = data.overview;
     var weekly = data.weekly || [];
     var assignees = data.assignees || [];
+    var tasks = data.tasks || [];
 
     var h = '';
 
@@ -1342,6 +1343,32 @@ function renderStatsModal(data) {
     });
 
     h += '</div>';
+
+    // ── Task(중분류)별 현황 ──
+    if (tasks.length > 0) {
+        h += '<div class="stats-sect" style="margin-top:18px">Task별 현황'
+            + '<button type="button" class="stats-task-toggle" onclick="toggleDoneTasks(this)">완료 숨김</button>'
+            + '</div>';
+        h += '<div class="stats-task-grid" id="statsTaskGrid">';
+        tasks.forEach(function(t) {
+            var total = t.total || 0;
+            var done = t.completed || 0;
+            var ratio = total > 0 ? Math.round(done / total * 100) : 0;
+            var rColor = ratio >= 100 ? '#18a058' : ratio >= 50 ? '#4f6ef7' : ratio > 0 ? '#e6a817' : '#9aa3b2';
+            var who = (t.assignees && t.assignees.length) ? t.assignees.join(', ') : '미지정';
+            var ps = t.plan_start_min ? shortDate(t.plan_start_min) : '-';
+            var pe = t.plan_end_max ? shortDate(t.plan_end_max) : '-';
+            var isDone = (total > 0 && done >= total);
+            h += '<div class="stats-task-card' + (isDone ? ' stats-task-card-done' : '') + '">'
+                + '<div class="stats-task-head"><span class="stats-task-name" title="' + esc(t.task_name) + '">' + esc(t.task_name) + '</span>'
+                + '<span class="stats-task-count" style="color:' + rColor + '">' + done + '/' + total + '<small> · ' + ratio + '%</small></span></div>'
+                + '<div class="stats-task-bar"><div class="stats-task-bar-fill" style="width:' + ratio + '%;background:' + rColor + '"></div></div>'
+                + '<div class="stats-task-meta"><span class="stats-task-who" title="' + esc(who) + '">👤 ' + esc(who) + '</span>'
+                + '<span class="stats-task-date">📅 ' + ps + ' ~ ' + pe + '</span></div>'
+                + '</div>';
+        });
+        h += '</div>';
+    }
 
     // ── 담당자별 현황 (3-card grid) ──
     if (assignees.length > 0) {
@@ -1525,6 +1552,16 @@ function renderStatsModal(data) {
             }
         });
     }
+}
+
+// Task별 현황: 완료(100%) 카드 숨김/표시 토글
+function toggleDoneTasks(btn) {
+    var grid = document.getElementById('statsTaskGrid');
+    if (!grid) return;
+    var hide = !grid.classList.contains('hide-done');
+    grid.classList.toggle('hide-done', hide);
+    btn.classList.toggle('active', hide);
+    btn.textContent = hide ? '완료 표시' : '완료 숨김';
 }
 
 var _statsDonutChart = null;
