@@ -324,9 +324,13 @@ wbs/
         - **완료 항목은 리스트에서 제외**하고 미완료를 두 섹션으로 — ①`[지연]` 기한경과·미완료(`has_end_delay`), ②`[이번주·다음주]` 오늘 기준 월~다음주 일(14일) 윈도우와 **계획기간이 겹치는**(plan_start≤윈도우끝 AND plan_end≥윈도우시작) 항목
         - 각 줄은 핵심 6필드(서브태스크/세부항목/담당자/계획시작/진행률/진행상태). 섹션 상한(`_COMPACT_DELAYED_CAP=12`/`_COMPACT_WEEK_CAP=30`) 초과 시 `...외 N건` 표기
     - 시스템 프롬프트도 `_build_compact_system_prompt()`(동일 JSON 프로토콜·필터 키 유지, 장황한 설명/예시 제거)
-    - `max_tokens`를 1024로 제한(출력이 입력+출력 합으로 컨텍스트 초과하지 않도록)
     - **query 필터는 LLM이 생성, 실제 조회는 `_execute_query()`가 전체 데이터로 수행** → 완료/전체 대상 질의도 결과 정확도 유지. 요약은 insight 근거용
-    - 크기: 전형적(주간 5~15건) ~2.6K자, 워스트(상한 꽉 참) ~5.5K자. 한글 토큰화로 4096이 빠듯하면 서버 ctx-size 8192 권장(또는 상한·자르기 축소)
+    - 크기: 전형적(주간 5~15건) ~2.6K자, 워스트(상한 꽉 참) ~5.5K자
+- **GEMMA 서버/모델 전제 (사내 aiops: llama.cpp 엔진 + 앞단 LiteLLM 프록시)**:
+    - `extra_body={"id_slot": 2}` 고정 전달 — 사내 슬롯 할당(0=기술지원, 1=AI 모니터링, 2=WBS). GEMMA일 때만(`_GEMMA_ID_SLOT`), Gemini 등엔 미전달(미지원 파라미터)
+    - **`llamacpp-2`는 추론(thinking) 모델** — `<think>` 토큰을 소비하므로 답(JSON)까지 낼 출력 여유 필요. ctx 4096·max_tokens 1024에선 "생각"만 하다 잘려 빈 응답(`finish_reason=length`, `completion_tokens=1024`, content 공백) 발생
+    - 대응: **llama.cpp 서버 `--ctx-size 8192` 기동 전제 + 코드 `max_tokens=2048`**. JSON 파서(`_parse_json_response`)가 `<think>...</think>{...}`에서 `{}`만 추출하므로 추론 블록이 섞여도 무방
+    - 빈 응답 진단: `_call_openai_compatible`이 빈 응답 시 `finish_reason`·`prompt_tokens`·`completion_tokens`를 에러 메시지에 포함
 - `process_command(project_id, query)` 진입점: 자연어 질의를 분석해 `_execute_query/add/delete/update/move()` 중 하나 선택 실행
 - 조회 결과는 `ids` 배열과 `display` 문자열로 반환 → 프론트엔드에서 해당 행만 그리드에 필터 표시
 - **move 액션** (2026-05-15): TID(행 번호) 기준 순서 이동을 지원. `source_row`/`target_row`/`position(above|below)` 파라미터를 받아 `get_flat_items` 전역 리스트에서 source pop → target 위/아래 삽입 → `sort_order` 0..N-1 재할당 → `recalculate_codes()` 실행. parent_id는 변경하지 않음(기존 드래그앤드롭과 동일한 시맨틱). viewer는 서버에서 403
