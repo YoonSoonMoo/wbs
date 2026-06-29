@@ -57,9 +57,17 @@ def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
             temperature=0,
             max_tokens=max_tokens,
         )
-        output = (resp.choices[0].message.content or "").strip()
+        choice = resp.choices[0]
+        output = (choice.message.content or "").strip()
         if not output:
-            raise RuntimeError("LLM이 빈 응답을 반환했습니다")
+            # 빈 응답 원인 진단: finish_reason='length' + completion_tokens=0 이면
+            # 입력이 컨텍스트 천장에 붙어 생성 여유가 없는 것(프롬프트 축소/ctx 상향 필요).
+            usage = getattr(resp, "usage", None)
+            detail = f"finish_reason={getattr(choice, 'finish_reason', None)}"
+            if usage is not None:
+                detail += (f", prompt_tokens={getattr(usage, 'prompt_tokens', None)}"
+                           f", completion_tokens={getattr(usage, 'completion_tokens', None)}")
+            raise RuntimeError(f"LLM이 빈 응답을 반환했습니다 ({detail})")
         return output
     except Exception as e:
         raise RuntimeError(f"LLM 호출 오류({cfg.get('AI_MODEL')}): {e}")
