@@ -312,14 +312,17 @@ wbs/
 - 프론트엔드: viewer일 때 편집 버튼 숨김 + contenteditable 비활성화 + 컨텍스트메뉴 차단 + API 403 응답 처리
 - **API 토큰 인증 (2026-06-25)**: API 데코레이터는 `Authorization: Bearer <token>`(SHA-256 해시 대조) 또는 세션 중 하나로 `g.user`를 해석한다. 토큰은 admin이 유저별로 발급해 이메일로 전달(평문 미저장), 권한은 동일하게 `user.role` 기준. Claude CLI 등 외부 클라이언트가 세션 없이 동일 권한 체계로 API를 호출한다. 자세한 흐름은 §8 "Claude CLI 연동" 참조
 
-### AI 어시스턴트: Claude CLI subprocess 방식
+### AI 어시스턴트: 멀티 프로바이더 LLM (GEMINI / GEMMA / LOCAL)
 
-- `app/services/ai_assistant.py`의 `_call_claude()`가 `claude -p --max-turns 1` subprocess를 **동기 호출** (timeout=120초)
+- `app/services/ai_assistant.py`의 `_call_llm()`이 `.env`의 `AI_MODEL` 값에 따라 호출 경로를 분기 (호출부 1곳):
+    - **GEMINI / GEMMA** → `_call_openai_compatible()`: `openai` SDK로 OpenAI 호환 엔드포인트 호출. `AI_BASE_URL`(사내 LiteLLM URL 등)·`AI_API_KEY`·`AI_MODEL_NAME`로 구성, `temperature=0`·`max_tokens=2048` 고정. GEMINI는 `AI_BASE_URL` 미설정 시 Google OpenAI 호환 엔드포인트(`generativelanguage.googleapis.com/v1beta/openai/`) 기본 사용. `openai` import는 함수 내부 지연 로딩이라 LOCAL 전용 환경에서는 미설치여도 무방
+    - **LOCAL** → `_call_claude_cli()`: 기존 `claude -p --max-turns 1` subprocess **동기 호출** (timeout=120초). 동작 무변경
+- 설정 환경변수: `AI_MODEL`(GEMINI|GEMMA|LOCAL, 기본 LOCAL) / `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL_NAME` — `config.py` `Config`에 정의
 - `process_command(project_id, query)` 진입점: 자연어 질의를 분석해 `_execute_query/add/delete/update/move()` 중 하나 선택 실행
 - 조회 결과는 `ids` 배열과 `display` 문자열로 반환 → 프론트엔드에서 해당 행만 그리드에 필터 표시
 - **move 액션** (2026-05-15): TID(행 번호) 기준 순서 이동을 지원. `source_row`/`target_row`/`position(above|below)` 파라미터를 받아 `get_flat_items` 전역 리스트에서 source pop → target 위/아래 삽입 → `sort_order` 0..N-1 재할당 → `recalculate_codes()` 실행. parent_id는 변경하지 않음(기존 드래그앤드롭과 동일한 시맨틱). viewer는 서버에서 403
 - `analyze_schedule_gaps(project_id)`: 계획일 vs 실제 작업일 차이 분석 (지연일수, 공수 집계)
-- **동시성 제약**: Flask 개발 서버 단일 스레드 기준, 복수 사용자 동시 질의 시 Claude CLI 호출이 순차 처리됨 (최대 120초 × N 대기 가능). 개선 시 `threaded=True` 또는 Claude API 직접 호출(anthropic SDK) 전환 필요
+- **동시성 제약**: `AI_MODEL=LOCAL`(Claude CLI subprocess)에서만 해당 — 복수 사용자 동시 질의 시 순차 처리(최대 120초 × N 대기 가능). GEMINI/GEMMA(OpenAI 호환 HTTP) 전환 시 subprocess 블로킹이 사라져 이 제약 완화됨
 
 ### 프론트엔드: template/wbs-manage.html 기반 재구성
 - WBS 그리드 UI는 `template/wbs-manage.html`의 디자인/동작을 그대로 재현
@@ -748,4 +751,5 @@ python run.py
 - [ ] 프로덕션 배포 설정 (waitress/gunicorn)
 - [x] 본인 비밀번호 변경 기능 (관리자 리셋 시 강제 팝업을 통한 변경 플로우 한정 구현)
 - [x] 관리자 사용자 관리 UI (역할 변경, 패스워드 리셋, 활성/비활성 토글) — 2026-04-17 완료. 유저 삭제는 미구현(비활성화로 대체)
-- [ ] AI 어시스턴트 동시성 개선 — 2026-04-23 `app.run(threaded=True)`로 단기 개선 적용(여러 요청 동시 수신 가능). 그러나 Claude CLI subprocess 자체는 여전히 개별 요청당 120초 타임아웃 동기 호출이라 근본 해결은 아님. 남은 방향: Celery/RQ 작업 큐(중기), anthropic SDK 직접 호출로 전환(장기 권장)
+- [x] AI 어시스턴트 멀티 프로바이더 — `AI_MODEL`(GEMINI/GEMMA/LOCAL) 기반으로 OpenAI 호환 API(사내 LiteLLM/GEMMA, Gemini) 또는 기존 claude -p CLI를 선택 호출(`_call_llm` 디스패처). GEMINI/GEMMA 경로는 HTTP 호출이라 LOCAL의 120초 subprocess 블로킹 제약을 받지 않음
+- [ ] AI 어시스턴트 동시성 — LOCAL(CLI) 한정 잔여 이슈. `app.run(threaded=True)` 단기 개선 적용됨. 추가 방향: Celery/RQ 작업 큐(중기)

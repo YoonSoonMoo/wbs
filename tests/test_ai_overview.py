@@ -46,7 +46,7 @@ def test_build_system_prompt_without_overview_marks_empty():
 
 
 def test_process_command_passes_overview_to_prompt(app, admin_client, monkeypatch):
-    """process_command 호출 시 _call_claude 로 전달되는 system prompt에
+    """process_command 호출 시 _call_llm 로 전달되는 system prompt에
     프로젝트 description 이 포함되는지 확인."""
     pid = admin_client.post('/api/projects', json={
         'name': 'FeedTest',
@@ -60,7 +60,7 @@ def test_process_command_passes_overview_to_prompt(app, admin_client, monkeypatc
         captured['user'] = user_prompt
         return '{"action": "query", "filters": {}, "description": "ok", "insight": "i"}'
 
-    monkeypatch.setattr(ai_assistant, '_call_claude', _fake_call)
+    monkeypatch.setattr(ai_assistant, '_call_llm', _fake_call)
 
     with app.app_context():
         result = ai_assistant.process_command(pid, '프로젝트 전반적인 진척상황 분석해줘')
@@ -70,3 +70,19 @@ def test_process_command_passes_overview_to_prompt(app, admin_client, monkeypatc
     assert 'FeedTest' in captured['system']
     # 질의 자체는 user prompt 로 전달
     assert '프로젝트 전반적인 진척상황' in captured['user']
+
+
+def test_call_llm_dispatches_by_ai_model(app, monkeypatch):
+    """AI_MODEL 설정에 따라 OpenAI 호환/CLI 경로로 라우팅되는지 검증."""
+    calls = []
+    monkeypatch.setattr(ai_assistant, '_call_openai_compatible',
+                        lambda s, u: calls.append('openai') or 'openai')
+    monkeypatch.setattr(ai_assistant, '_call_claude_cli',
+                        lambda s, u: calls.append('cli') or 'cli')
+
+    for model, expected in (('GEMINI', 'openai'), ('GEMMA', 'openai'), ('LOCAL', 'cli')):
+        calls.clear()
+        with app.app_context():
+            app.config['AI_MODEL'] = model
+            assert ai_assistant._call_llm('sys', 'user') == expected
+        assert calls == [expected]

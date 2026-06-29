@@ -9,6 +9,8 @@ import subprocess
 import sys
 from datetime import date, datetime, timedelta
 
+from flask import current_app
+
 from app.extensions import get_db
 from app.models import project as project_model
 from app.models import wbs_item as wbs_model
@@ -19,9 +21,48 @@ logger = logging.getLogger(__name__)
 
 _is_windows = sys.platform == "win32"
 
+# GEMINI(AI_MODEL=GEMINI)에서 AI_BASE_URL 미설정 시 사용하는 OpenAI 호환 기본 엔드포인트
+_GEMINI_DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
-def _call_claude(system_prompt: str, user_prompt: str) -> str:
-    """Claude Code CLI를 subprocess로 호출한다."""
+
+def _call_llm(system_prompt: str, user_prompt: str) -> str:
+    """AI_MODEL 설정에 따라 LLM을 호출한다.
+
+    GEMINI/GEMMA → OpenAI 호환 엔드포인트, LOCAL → claude -p CLI.
+    """
+    provider = current_app.config.get("AI_MODEL", "LOCAL")
+    if provider in ("GEMINI", "GEMMA"):
+        return _call_openai_compatible(system_prompt, user_prompt)
+    return _call_claude_cli(system_prompt, user_prompt)
+
+
+def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
+    """OpenAI 호환 엔드포인트(사내 LiteLLM/GEMMA, Gemini)를 호출한다."""
+    from openai import OpenAI
+
+    cfg = current_app.config
+    base_url = cfg.get("AI_BASE_URL") or _GEMINI_DEFAULT_BASE_URL
+    try:
+        client = OpenAI(base_url=base_url, api_key=cfg["AI_API_KEY"])
+        resp = client.chat.completions.create(
+            model=cfg["AI_MODEL_NAME"],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0,
+            max_tokens=2048,
+        )
+        output = (resp.choices[0].message.content or "").strip()
+        if not output:
+            raise RuntimeError("LLM이 빈 응답을 반환했습니다")
+        return output
+    except Exception as e:
+        raise RuntimeError(f"LLM 호출 오류({cfg.get('AI_MODEL')}): {e}")
+
+
+def _call_claude_cli(system_prompt: str, user_prompt: str) -> str:
+    """Claude Code CLI를 subprocess로 호출한다 (AI_MODEL=LOCAL)."""
     full_prompt = f"[시스템 지시사항]\n{system_prompt}\n\n[사용자 요청]\n{user_prompt}"
     try:
         result = subprocess.run(
@@ -501,7 +542,7 @@ def process_command(project_id: int, user_input: str) -> dict:
     user_prompt = f'질의: "{user_input}"\nJSON 형식으로만 응답하세요. 코드블록으로 감싸지 마세요.'
 
     try:
-        response_text = _call_claude(system_prompt, user_prompt)
+        response_text = _call_llm(system_prompt, user_prompt)
         parsed = _parse_json_response(response_text)
 
         if not parsed or 'action' not in parsed:

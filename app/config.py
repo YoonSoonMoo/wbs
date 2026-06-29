@@ -11,6 +11,13 @@ class Config:
     ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', 'admin@example.com')
     ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin1234')
 
+    # AI 어시스턴트 LLM 프로바이더 (GEMINI | GEMMA | LOCAL)
+    # GEMINI/GEMMA: OpenAI 호환 엔드포인트, LOCAL: claude -p CLI
+    AI_MODEL = os.environ.get('AI_MODEL', 'LOCAL').upper()
+    AI_API_KEY = os.environ.get('AI_API_KEY', '')
+    AI_BASE_URL = os.environ.get('AI_BASE_URL', '')
+    AI_MODEL_NAME = os.environ.get('AI_MODEL_NAME', '')
+
 
 class DevelopmentConfig(Config):
     DEBUG = True
