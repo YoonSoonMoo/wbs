@@ -1,6 +1,8 @@
 """AI 어시스턴트가 프로젝트 개요(description)를 프롬프트에 주입하는지 검증."""
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from app.services import ai_assistant
 
 
@@ -92,10 +94,42 @@ def test_gemma_uses_compact_prompt(app, admin_client, monkeypatch):
         result = ai_assistant.process_command(pid, '전체 현황 알려줘')
 
     assert result['success'] is True
-    # 압축 프롬프트 표식 + 집계 라인 포함, 행 단위 상세 나열은 없음
+    # 압축 프롬프트 표식 + 집계/섹션 헤더 포함
     assert 'WBS 현황 요약' in captured['system']
     assert '담당자별 건수' in captured['system']
-    assert '세부:' not in captured['system']  # 전체 나열(_get_items_summary) 표식 부재
+    assert '[이번주·다음주]' in captured['system']
+    # 전체 나열(_get_items_summary)만 쓰는 '실제종료:' 표식은 부재
+    assert '실제종료:' not in captured['system']
+
+
+def test_compact_summary_window_and_exclusions(app, admin_client):
+    """압축 요약: 완료 제외 / 이번주·다음주 미완료 포함 / 과거 지연 별도 포함."""
+    pid = admin_client.post('/api/projects', json={'name': 'WindowTest'}).get_json()['id']
+    today = date.today()
+
+    def _add(**kw):
+        admin_client.post(f'/api/wbs/{pid}/items', json=kw)
+
+    # 이번주 시작 미완료 → 이번주·다음주 섹션
+    _add(task_name='WK', subtask='금주작업', assignee='가나',
+         plan_start=str(today), plan_end=str(today + timedelta(days=1)), progress=30)
+    # 완료 항목 → 어느 리스트에도 안 나옴
+    _add(task_name='DONE', subtask='완료작업', assignee='다라',
+         plan_start=str(today), plan_end=str(today + timedelta(days=1)), progress=100)
+    # 과거 기한경과 미완료 → 지연 섹션
+    _add(task_name='LATE', subtask='지연작업', assignee='마바',
+         plan_start=str(today - timedelta(days=20)), plan_end=str(today - timedelta(days=10)), progress=50)
+    # 먼 미래(윈도우 밖) 미완료 → 어느 섹션에도 없음
+    _add(task_name='FUTURE', subtask='미래작업', assignee='사아',
+         plan_start=str(today + timedelta(days=60)), plan_end=str(today + timedelta(days=70)), progress=0)
+
+    with app.app_context():
+        summary = ai_assistant._get_compact_summary(pid)
+
+    assert '금주작업' in summary       # 이번주 윈도우 포함
+    assert '지연작업' in summary       # 과거 지연 별도 포함
+    assert '완료작업' not in summary   # 완료 제외
+    assert '미래작업' not in summary   # 윈도우 밖 제외
 
 
 def test_call_llm_dispatches_by_ai_model(app, monkeypatch):

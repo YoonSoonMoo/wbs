@@ -319,11 +319,14 @@ wbs/
     - **LOCAL** → `_call_claude_cli()`: 기존 `claude -p --max-turns 1` subprocess **동기 호출** (timeout=120초). 동작 무변경
 - 설정 환경변수: `AI_MODEL`(GEMINI|GEMMA|LOCAL, 기본 LOCAL) / `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL_NAME` — `config.py` `Config`에 정의
 - **GEMMA 컨텍스트 대응 (작은 컨텍스트 모델 전용 경로)**: 사내 GEMMA(llama.cpp)는 컨텍스트가 작아(예: 4096토큰) 전체 WBS 행을 프롬프트에 넣으면 `ContextWindowExceededError` 발생. 따라서 `AI_MODEL=GEMMA`일 때만:
-    - 데이터 요약을 `_get_items_summary()`(행 전체 나열) 대신 `_get_compact_summary()`(집계+지연 상위 12건)로 대체 → 프롬프트가 **행 수와 무관하게 거의 일정**(320행 기준 24.5K자→2.6K자)
+    - 데이터 요약을 `_get_items_summary()`(행 전체 나열) 대신 `_get_compact_summary()`로 대체. 구조:
+        - 집계 헤더(총건수/완료·진행중·미착수/평균진행률, 담당자별 건수, 구분 목록)
+        - **완료 항목은 리스트에서 제외**하고 미완료를 두 섹션으로 — ①`[지연]` 기한경과·미완료(`has_end_delay`), ②`[이번주·다음주]` 오늘 기준 월~다음주 일(14일) 윈도우와 **계획기간이 겹치는**(plan_start≤윈도우끝 AND plan_end≥윈도우시작) 항목
+        - 각 줄은 핵심 6필드(서브태스크/세부항목/담당자/계획시작/진행률/진행상태). 섹션 상한(`_COMPACT_DELAYED_CAP=12`/`_COMPACT_WEEK_CAP=30`) 초과 시 `...외 N건` 표기
     - 시스템 프롬프트도 `_build_compact_system_prompt()`(동일 JSON 프로토콜·필터 키 유지, 장황한 설명/예시 제거)
     - `max_tokens`를 1024로 제한(출력이 입력+출력 합으로 컨텍스트 초과하지 않도록)
-    - **query 필터는 LLM이 생성, 실제 조회는 `_execute_query()`가 전체 데이터로 수행** → 결과 정확도 유지. insight만 집계 기반
-    - 한글이 토크나이저에서 잘게 쪼개져 4096이 여전히 빠듯하면 서버 ctx-size를 8192로 상향 권장(압축 후엔 8K로 충분)
+    - **query 필터는 LLM이 생성, 실제 조회는 `_execute_query()`가 전체 데이터로 수행** → 완료/전체 대상 질의도 결과 정확도 유지. 요약은 insight 근거용
+    - 크기: 전형적(주간 5~15건) ~2.6K자, 워스트(상한 꽉 참) ~5.5K자. 한글 토큰화로 4096이 빠듯하면 서버 ctx-size 8192 권장(또는 상한·자르기 축소)
 - `process_command(project_id, query)` 진입점: 자연어 질의를 분석해 `_execute_query/add/delete/update/move()` 중 하나 선택 실행
 - 조회 결과는 `ids` 배열과 `display` 문자열로 반환 → 프론트엔드에서 해당 행만 그리드에 필터 표시
 - **move 액션** (2026-05-15): TID(행 번호) 기준 순서 이동을 지원. `source_row`/`target_row`/`position(above|below)` 파라미터를 받아 `get_flat_items` 전역 리스트에서 source pop → target 위/아래 삽입 → `sort_order` 0..N-1 재할당 → `recalculate_codes()` 실행. parent_id는 변경하지 않음(기존 드래그앤드롭과 동일한 시맨틱). viewer는 서버에서 403

@@ -296,13 +296,29 @@ def _get_items_summary(project_id: int) -> str:
     return f"총 {len(items)}건:\n" + "\n".join(lines)
 
 
+def _parse_date(value) -> "date | None":
+    """'YYYY-MM-DD' 문자열을 date로 파싱한다. 실패 시 None."""
+    s = (value or '').strip()
+    try:
+        return datetime.strptime(s, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return None
+
+
+# 압축 요약에서 섹션별로 나열할 최대 항목 수 (초과분은 "...외 N건"으로 표기)
+_COMPACT_DELAYED_CAP = 12
+_COMPACT_WEEK_CAP = 30
+
+
 def _get_compact_summary(project_id: int) -> str:
     """작은 컨텍스트 모델(GEMMA)용 요약.
 
-    전체 행을 나열하면 컨텍스트(예: 4096토큰)를 초과하므로, 행 단위 나열 대신
-    집계(상태/담당자/구분)와 지연 상위 항목만 압축해 전달한다. query 필터는 LLM이
-    생성하고 실제 조회는 코드(_execute_query)가 전체 데이터로 수행하므로 결과 정확도는
-    유지되며, insight는 아래 집계를 근거로 작성된다.
+    전체 행을 나열하면 컨텍스트(예: 4096토큰)를 초과하므로, 완료 항목을 제외하고
+    ①기한경과·미완료(지연), ②이번주·다음주(오늘 기준 월~다음주 일, 14일) 계획기간이
+    겹치는 미완료 항목만 핵심 필드(서브태스크/세부항목/담당자/계획시작/진행률/진행상태)와
+    함께 추린다. 집계 헤더는 전체 건수만 제공. query 필터는 LLM이 생성하고 실제 조회는
+    _execute_query가 전체 데이터로 수행하므로 결과 정확도는 유지되며, insight는 아래
+    요약을 근거로 작성된다.
     """
     items = wbs_model.get_flat_items(project_id)
     if not items:
@@ -320,24 +336,58 @@ def _get_compact_summary(project_id: int) -> str:
     categories = sorted({(it.get('category') or '').strip() for it in items if (it.get('category') or '').strip()})
     category_str = ", ".join(categories) if categories else "(없음)"
 
-    delayed = []
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())   # 이번주 월요일
+    week_end = week_start + timedelta(days=13)              # 다음주 일요일
+
+    def _line(tid, item, tail):
+        sub = (item.get('subtask') or '')
+        assignee = (item.get('assignee') or '')
+        ps = (item.get('plan_start') or '')
+        prog = item.get('progress') or 0
+        status = (item.get('status') or '')[:30]
+        detail = (item.get('detail') or '')[:30]
+        return (f"  TID{tid}. 서브:{sub} 담당:{assignee} 계획시작:{ps} 진행:{prog}% "
+                f"상태:{status} 세부:{detail}{tail}")
+
+    delayed = []   # (gap, line)
+    week = []      # (sort_key, line)
     for i, item in enumerate(items):
+        if (item.get('progress') or 0) >= 100:
+            continue  # 완료 제외
+        tid = i + 1
         sched = _compute_schedule_info(item)
-        if (item.get('progress') or 0) < 100 and sched['has_end_delay']:
-            delayed.append((i + 1, sched['end_gap_days'], item))
-    delayed.sort(key=lambda x: x[1], reverse=True)
-    delayed_lines = [
-        f"  TID{tid}. [{(it.get('task_name') or '')}] 담당:{it.get('assignee') or ''} "
-        f"계획완료:{it.get('plan_end') or ''} 진행:{it.get('progress') or 0}% 지연:{gap}일"
-        for tid, gap, it in delayed[:12]
-    ]
-    delayed_block = "\n".join(delayed_lines) if delayed_lines else "  (없음)"
+        if sched['has_end_delay']:
+            gap = sched['end_gap_days']
+            delayed.append((gap, _line(tid, item, f" [지연{gap}일·계획완료:{item.get('plan_end') or ''}]")))
+        # 이번주·다음주 윈도우와 계획기간 겹침 (start<=winEnd AND end>=winStart)
+        ps_d = _parse_date(item.get('plan_start'))
+        pe_d = _parse_date(item.get('plan_end'))
+        s = ps_d or pe_d
+        e = pe_d or ps_d
+        if s and e and s <= week_end and e >= week_start:
+            week.append((s, _line(tid, item, "")))
+
+    def _block(rows, cap):
+        rows_sorted = [ln for _, ln in rows]
+        shown = rows_sorted[:cap]
+        more = len(rows_sorted) - len(shown)
+        if not shown:
+            return "  (없음)"
+        block = "\n".join(shown)
+        if more > 0:
+            block += f"\n  ...외 {more}건"
+        return block
+
+    delayed.sort(key=lambda x: x[0], reverse=True)
+    week.sort(key=lambda x: x[0])
 
     return (
         f"총 {total}건 (완료 {done} / 진행중 {in_prog} / 미착수 {not_started}, 평균진행률 {avg_progress}%)\n"
         f"담당자별 건수: {assignee_str}\n"
         f"구분 목록: {category_str}\n"
-        f"지연(기한경과·미완료) {len(delayed)}건, 상위:\n{delayed_block}"
+        f"[지연] 기한경과·미완료 {len(delayed)}건:\n{_block(delayed, _COMPACT_DELAYED_CAP)}\n"
+        f"[이번주·다음주] 미완료 {len(week)}건 (윈도우 {week_start}~{week_end}):\n{_block(week, _COMPACT_WEEK_CAP)}"
     )
 
 
