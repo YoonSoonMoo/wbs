@@ -25,6 +25,9 @@ _is_windows = sys.platform == "win32"
 # GEMINI(AI_MODEL=GEMINI)에서 AI_BASE_URL 미설정 시 사용하는 OpenAI 호환 기본 엔드포인트
 _GEMINI_DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
+# 사내 GEMMA(llama.cpp) 슬롯 할당: 0=기술지원, 1=AI 모니터링, 2=WBS(고정)
+_GEMMA_ID_SLOT = 2
+
 
 def _call_llm(system_prompt: str, user_prompt: str) -> str:
     """AI_MODEL 설정에 따라 LLM을 호출한다.
@@ -42,10 +45,16 @@ def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
     from openai import OpenAI
 
     cfg = current_app.config
+    provider = cfg.get("AI_MODEL")
     base_url = cfg.get("AI_BASE_URL") or _GEMINI_DEFAULT_BASE_URL
     # GEMMA(사내 llama.cpp)는 컨텍스트가 작아(예: 4096) 출력 토큰이 입력+출력 합을
     # 초과하지 않도록 제한. 응답 JSON은 짧아 1024로 충분하다.
-    max_tokens = 1024 if cfg.get("AI_MODEL") == "GEMMA" else 2048
+    max_tokens = 1024 if provider == "GEMMA" else 2048
+    # GEMMA(llama.cpp)는 지정 슬롯의 KV 캐시를 쓰도록 id_slot을 고정 전달한다.
+    # Gemini 등 다른 OpenAI 호환 엔드포인트엔 미지원 파라미터라 보내지 않는다.
+    create_kwargs = {}
+    if provider == "GEMMA":
+        create_kwargs["extra_body"] = {"id_slot": _GEMMA_ID_SLOT}
     try:
         client = OpenAI(base_url=base_url, api_key=cfg["AI_API_KEY"])
         resp = client.chat.completions.create(
@@ -56,6 +65,7 @@ def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
             ],
             temperature=0,
             max_tokens=max_tokens,
+            **create_kwargs,
         )
         choice = resp.choices[0]
         output = (choice.message.content or "").strip()
