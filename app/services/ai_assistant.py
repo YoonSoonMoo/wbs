@@ -47,9 +47,9 @@ def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
     cfg = current_app.config
     provider = cfg.get("AI_MODEL")
     base_url = cfg.get("AI_BASE_URL") or _GEMINI_DEFAULT_BASE_URL
-    # GEMMA(사내 llama.cpp)는 컨텍스트가 작아(예: 4096) 출력 토큰이 입력+출력 합을
-    # 초과하지 않도록 제한. 응답 JSON은 짧아 1024로 충분하다.
-    max_tokens = 1024 if provider == "GEMMA" else 2048
+    # 추론(thinking) 모델은 "생각" 토큰까지 소비하므로 답(JSON)을 낼 여유가 필요하다.
+    # GEMMA(llama.cpp)는 서버 ctx-size 8192 전제로 2048 허용(입력+출력 < 8192).
+    max_tokens = 2048
     # GEMMA(llama.cpp)는 지정 슬롯의 KV 캐시를 쓰도록 id_slot을 고정 전달한다.
     # Gemini 등 다른 OpenAI 호환 엔드포인트엔 미지원 파라미터라 보내지 않는다.
     create_kwargs = {}
