@@ -7,6 +7,7 @@ import json
 import logging
 import subprocess
 import sys
+from collections import Counter
 from datetime import date, datetime, timedelta
 
 from flask import current_app
@@ -42,6 +43,9 @@ def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
 
     cfg = current_app.config
     base_url = cfg.get("AI_BASE_URL") or _GEMINI_DEFAULT_BASE_URL
+    # GEMMA(사내 llama.cpp)는 컨텍스트가 작아(예: 4096) 출력 토큰이 입력+출력 합을
+    # 초과하지 않도록 제한. 응답 JSON은 짧아 1024로 충분하다.
+    max_tokens = 1024 if cfg.get("AI_MODEL") == "GEMMA" else 2048
     try:
         client = OpenAI(base_url=base_url, api_key=cfg["AI_API_KEY"])
         resp = client.chat.completions.create(
@@ -51,7 +55,7 @@ def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0,
-            max_tokens=2048,
+            max_tokens=max_tokens,
         )
         output = (resp.choices[0].message.content or "").strip()
         if not output:
@@ -290,6 +294,91 @@ def _get_items_summary(project_id: int) -> str:
             f"진행:{progress}% 계획완료:{plan_end} 실제종료:{actual_end}{gap_info} 상태:{status} 세부:{detail}"
         )
     return f"총 {len(items)}건:\n" + "\n".join(lines)
+
+
+def _get_compact_summary(project_id: int) -> str:
+    """작은 컨텍스트 모델(GEMMA)용 요약.
+
+    전체 행을 나열하면 컨텍스트(예: 4096토큰)를 초과하므로, 행 단위 나열 대신
+    집계(상태/담당자/구분)와 지연 상위 항목만 압축해 전달한다. query 필터는 LLM이
+    생성하고 실제 조회는 코드(_execute_query)가 전체 데이터로 수행하므로 결과 정확도는
+    유지되며, insight는 아래 집계를 근거로 작성된다.
+    """
+    items = wbs_model.get_flat_items(project_id)
+    if not items:
+        return "항목 없음"
+
+    total = len(items)
+    done = sum(1 for it in items if (it.get('progress') or 0) >= 100)
+    in_prog = sum(1 for it in items if 0 < (it.get('progress') or 0) < 100)
+    not_started = total - done - in_prog
+    avg_progress = round(sum(it.get('progress') or 0 for it in items) / total)
+
+    assignee_counts = Counter(((it.get('assignee') or '').strip() or '미지정') for it in items)
+    assignee_str = ", ".join(f"{a}({c})" for a, c in assignee_counts.most_common())
+
+    categories = sorted({(it.get('category') or '').strip() for it in items if (it.get('category') or '').strip()})
+    category_str = ", ".join(categories) if categories else "(없음)"
+
+    delayed = []
+    for i, item in enumerate(items):
+        sched = _compute_schedule_info(item)
+        if (item.get('progress') or 0) < 100 and sched['has_end_delay']:
+            delayed.append((i + 1, sched['end_gap_days'], item))
+    delayed.sort(key=lambda x: x[1], reverse=True)
+    delayed_lines = [
+        f"  TID{tid}. [{(it.get('task_name') or '')}] 담당:{it.get('assignee') or ''} "
+        f"계획완료:{it.get('plan_end') or ''} 진행:{it.get('progress') or 0}% 지연:{gap}일"
+        for tid, gap, it in delayed[:12]
+    ]
+    delayed_block = "\n".join(delayed_lines) if delayed_lines else "  (없음)"
+
+    return (
+        f"총 {total}건 (완료 {done} / 진행중 {in_prog} / 미착수 {not_started}, 평균진행률 {avg_progress}%)\n"
+        f"담당자별 건수: {assignee_str}\n"
+        f"구분 목록: {category_str}\n"
+        f"지연(기한경과·미완료) {len(delayed)}건, 상위:\n{delayed_block}"
+    )
+
+
+def _build_compact_system_prompt(items_summary: str, project_overview: str = "") -> str:
+    """작은 컨텍스트 모델(GEMMA)용 축약 시스템 프롬프트.
+
+    _build_system_prompt와 동일한 JSON 프로토콜·필터 키를 유지하되, 장황한 설명/예시를
+    덜어내 토큰을 절약한다(한글은 llama.cpp 계열 토크나이저에서 토큰 수가 크다).
+    """
+    today = datetime.now().strftime('%Y-%m-%d')
+    year = today[:4]
+    overview_block = project_overview if project_overview else "(미기입)"
+    return f"""당신은 WBS 관리 AI 어시스턴트입니다. 사용자 질의를 분석해 JSON만 반환하세요(코드블록 금지).
+
+오늘: {today}
+
+프로젝트 개요:
+{overview_block}
+
+WBS 현황 요약:
+{items_summary}
+
+## 명령(action)
+- query 조회: {{"action":"query","filters":{{...}},"description":"...","insight":"(선택)분석코멘트"}}
+- add 추가: {{"action":"add","data":{{"task_name":"...","subtask":"...","assignee":"...","plan_start":"YYYY-MM-DD","plan_end":"YYYY-MM-DD","effort":2}},"description":"..."}}
+- delete 삭제: {{"action":"delete","row_number":11,"description":"..."}}
+- update 수정: {{"action":"update","row_number":5,"data":{{"progress":80,"status":"진행중"}},"description":"..."}}
+- move 순서이동: {{"action":"move","source_row":43,"target_row":326,"position":"above","description":"..."}}
+
+## filters 키
+- 일반 컬럼(assignee, category, status, progress 등): 값 일치
+- delayed:true(기한경과·미완료) / schedule_delayed:true(실제종료 지연) / schedule_gap_min:N(N일이상 지연)
+- schedule_early:true(조기완료) / start_delayed:true(지연착수) / start_early:true(선착수) / date_diff:true(계획·실제 불일치)
+- detail_contains:"키워드"(세부항목 포함) / progress_lt:N(진행률 미만) / progress_gte:N(진행률 이상)
+
+규칙:
+- row_number/source_row/target_row는 사용자가 말한 TID(1-base)를 그대로 사용.
+- position은 "above"(위, 기본) 또는 "below"(아래).
+- 날짜는 YYYY-MM-DD. "4/22"는 {year} 기준으로 변환.
+- 전반 진척/리스크 질의는 위 현황 요약을 근거로 insight에 작성.
+- JSON만, 코드블록 없이 응답."""
 
 
 def _calc_day_diff(date_a: str, date_b: str) -> int:
@@ -536,9 +625,14 @@ def _execute_move(project_id: int, source_row: int, target_row: int, position: s
 
 def process_command(project_id: int, user_input: str) -> dict:
     """자연어 입력을 파싱하고 실행하여 결과를 반환한다."""
-    items_summary = _get_items_summary(project_id)
     project_overview = _get_project_overview(project_id)
-    system_prompt = _build_system_prompt(items_summary, project_overview=project_overview)
+    if current_app.config.get('AI_MODEL') == 'GEMMA':
+        # 작은 컨텍스트 모델 — 전체 행 대신 압축 요약 + 축약 프롬프트 사용
+        items_summary = _get_compact_summary(project_id)
+        system_prompt = _build_compact_system_prompt(items_summary, project_overview[:800])
+    else:
+        items_summary = _get_items_summary(project_id)
+        system_prompt = _build_system_prompt(items_summary, project_overview=project_overview)
     user_prompt = f'질의: "{user_input}"\nJSON 형식으로만 응답하세요. 코드블록으로 감싸지 마세요.'
 
     try:

@@ -315,9 +315,15 @@ wbs/
 ### AI 어시스턴트: 멀티 프로바이더 LLM (GEMINI / GEMMA / LOCAL)
 
 - `app/services/ai_assistant.py`의 `_call_llm()`이 `.env`의 `AI_MODEL` 값에 따라 호출 경로를 분기 (호출부 1곳):
-    - **GEMINI / GEMMA** → `_call_openai_compatible()`: `openai` SDK로 OpenAI 호환 엔드포인트 호출. `AI_BASE_URL`(사내 LiteLLM URL 등)·`AI_API_KEY`·`AI_MODEL_NAME`로 구성, `temperature=0`·`max_tokens=2048` 고정. GEMINI는 `AI_BASE_URL` 미설정 시 Google OpenAI 호환 엔드포인트(`generativelanguage.googleapis.com/v1beta/openai/`) 기본 사용. `openai` import는 함수 내부 지연 로딩이라 LOCAL 전용 환경에서는 미설치여도 무방
+    - **GEMINI / GEMMA** → `_call_openai_compatible()`: `openai` SDK로 OpenAI 호환 엔드포인트 호출. `AI_BASE_URL`(사내 LiteLLM URL 등)·`AI_API_KEY`·`AI_MODEL_NAME`로 구성, `temperature=0`. GEMINI는 `AI_BASE_URL` 미설정 시 Google OpenAI 호환 엔드포인트(`generativelanguage.googleapis.com/v1beta/openai/`) 기본 사용. `openai` import는 함수 내부 지연 로딩이라 LOCAL 전용 환경에서는 미설치여도 무방. base_url은 스킴+`/v1` 경로 필수(예: `http://litellm:4000/v1`), 모델명은 엔드포인트에 등록된 이름(LiteLLM이면 `llamacpp-1` 등)
     - **LOCAL** → `_call_claude_cli()`: 기존 `claude -p --max-turns 1` subprocess **동기 호출** (timeout=120초). 동작 무변경
 - 설정 환경변수: `AI_MODEL`(GEMINI|GEMMA|LOCAL, 기본 LOCAL) / `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL_NAME` — `config.py` `Config`에 정의
+- **GEMMA 컨텍스트 대응 (작은 컨텍스트 모델 전용 경로)**: 사내 GEMMA(llama.cpp)는 컨텍스트가 작아(예: 4096토큰) 전체 WBS 행을 프롬프트에 넣으면 `ContextWindowExceededError` 발생. 따라서 `AI_MODEL=GEMMA`일 때만:
+    - 데이터 요약을 `_get_items_summary()`(행 전체 나열) 대신 `_get_compact_summary()`(집계+지연 상위 12건)로 대체 → 프롬프트가 **행 수와 무관하게 거의 일정**(320행 기준 24.5K자→2.6K자)
+    - 시스템 프롬프트도 `_build_compact_system_prompt()`(동일 JSON 프로토콜·필터 키 유지, 장황한 설명/예시 제거)
+    - `max_tokens`를 1024로 제한(출력이 입력+출력 합으로 컨텍스트 초과하지 않도록)
+    - **query 필터는 LLM이 생성, 실제 조회는 `_execute_query()`가 전체 데이터로 수행** → 결과 정확도 유지. insight만 집계 기반
+    - 한글이 토크나이저에서 잘게 쪼개져 4096이 여전히 빠듯하면 서버 ctx-size를 8192로 상향 권장(압축 후엔 8K로 충분)
 - `process_command(project_id, query)` 진입점: 자연어 질의를 분석해 `_execute_query/add/delete/update/move()` 중 하나 선택 실행
 - 조회 결과는 `ids` 배열과 `display` 문자열로 반환 → 프론트엔드에서 해당 행만 그리드에 필터 표시
 - **move 액션** (2026-05-15): TID(행 번호) 기준 순서 이동을 지원. `source_row`/`target_row`/`position(above|below)` 파라미터를 받아 `get_flat_items` 전역 리스트에서 source pop → target 위/아래 삽입 → `sort_order` 0..N-1 재할당 → `recalculate_codes()` 실행. parent_id는 변경하지 않음(기존 드래그앤드롭과 동일한 시맨틱). viewer는 서버에서 403

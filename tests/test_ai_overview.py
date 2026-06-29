@@ -72,6 +72,32 @@ def test_process_command_passes_overview_to_prompt(app, admin_client, monkeypatc
     assert '프로젝트 전반적인 진척상황' in captured['user']
 
 
+def test_gemma_uses_compact_prompt(app, admin_client, monkeypatch):
+    """AI_MODEL=GEMMA 시 전체 행 나열 대신 압축 요약 프롬프트가 사용되는지 검증."""
+    pid = admin_client.post('/api/projects', json={'name': 'CompactTest'}).get_json()['id']
+    admin_client.post(f'/api/wbs/{pid}/items', json={
+        'task_name': 'T1', 'assignee': '홍길동', 'progress': 100,
+    })
+
+    captured = {}
+
+    def _fake_call(system_prompt, user_prompt):
+        captured['system'] = system_prompt
+        return '{"action": "query", "filters": {}, "description": "ok"}'
+
+    monkeypatch.setattr(ai_assistant, '_call_llm', _fake_call)
+
+    with app.app_context():
+        app.config['AI_MODEL'] = 'GEMMA'
+        result = ai_assistant.process_command(pid, '전체 현황 알려줘')
+
+    assert result['success'] is True
+    # 압축 프롬프트 표식 + 집계 라인 포함, 행 단위 상세 나열은 없음
+    assert 'WBS 현황 요약' in captured['system']
+    assert '담당자별 건수' in captured['system']
+    assert '세부:' not in captured['system']  # 전체 나열(_get_items_summary) 표식 부재
+
+
 def test_call_llm_dispatches_by_ai_model(app, monkeypatch):
     """AI_MODEL 설정에 따라 OpenAI 호환/CLI 경로로 라우팅되는지 검증."""
     calls = []
