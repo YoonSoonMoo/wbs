@@ -99,6 +99,15 @@ def set_history_flag(project_id):
     return jsonify({'id': project_id, 'history_enabled': enabled})
 
 
+@api_project_bp.route('/scheduler/status', methods=['GET'])
+@api_login_required
+@admin_required
+def scheduler_status():
+    """태스크 알림 스케줄러 작동 상태 조회. (admin 진단용)"""
+    from app.scheduler import get_status
+    return jsonify(get_status())
+
+
 @api_project_bp.route('/<int:project_id>/members', methods=['GET'])
 @api_login_required
 def list_project_members(project_id):

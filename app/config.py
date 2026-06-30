@@ -22,6 +22,9 @@ class Config:
     # 요청 컨텍스트가 없어 request.host_url을 쓸 수 없으므로 환경변수로 지정.
     APP_BASE_URL = os.environ.get('APP_BASE_URL', 'http://localhost:5000')
 
+    # 스케줄러 발송시각 비교 기준 시간대. 컨테이너가 UTC여도 한국시간으로 발송하도록.
+    APP_TZ = os.environ.get('APP_TZ', 'Asia/Seoul')
+
 
 class DevelopmentConfig(Config):
     DEBUG = True

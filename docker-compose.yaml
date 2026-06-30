@@ -16,6 +16,9 @@ services:
       HOST: 0.0.0.0
       PORT: 5000
       DATABASE_PATH: instance/wbs.db
+      # 컨테이너 시간대를 한국시간으로 (스케줄러 발송시각·메일 표시·이력 시각 일관).
+      # Dockerfile에서 tzdata 설치 + ENV TZ를 두지만, 여기서도 명시해 Coolify에서 가시화.
+      TZ: Asia/Seoul
     volumes:
       # SQLite DB 영속화 — 재배포/재시작에도 데이터 유지
       - wbs-data:/app/instance

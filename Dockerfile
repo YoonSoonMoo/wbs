@@ -6,6 +6,13 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+# 타임존 데이터 설치 + 한국시간 고정 (slim 이미지엔 zoneinfo가 없어 tzdata 필요).
+# 이게 있어야 TZ=Asia/Seoul 이 실제로 적용되어 datetime.now()/SQLite localtime이 KST가 된다.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tzdata \
+    && rm -rf /var/lib/apt/lists/*
+ENV TZ=Asia/Seoul
+
 # 의존성 먼저 설치 (소스 변경과 무관하게 레이어 캐시 활용)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

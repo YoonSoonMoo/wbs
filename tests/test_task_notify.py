@@ -100,6 +100,19 @@ def test_send_task_update_mail_endpoint(admin_client, viewer_client, monkeypatch
     assert resp.get_json()['sent'] == 0
 
 
+def test_scheduler_status_endpoint(admin_client, viewer_client):
+    """스케줄러 상태 조회: admin 200 / viewer 차단. 테스트 환경은 미기동(running False)."""
+    resp_v = viewer_client.get('/api/projects/scheduler/status')
+    assert resp_v.status_code in (401, 403)
+
+    resp = admin_client.get('/api/projects/scheduler/status')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['running'] is False           # TESTING이라 미기동
+    assert data['tz'] == 'Asia/Seoul'
+    assert 'now' in data and 'last_tick' in data
+
+
 def test_send_task_update_mails_empty_no_send(app, admin_client, monkeypatch):
     """이번주 할당 태스크가 없으면 메일을 보내지 않는다."""
     pid = admin_client.post('/api/projects', json={'name': 'EmptyProj'}).get_json()['id']
