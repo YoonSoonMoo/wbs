@@ -189,7 +189,6 @@ def build_delay_mail_html(
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f6f9;">
 <tr><td align="center" style="padding:32px 16px;">
 
-  <!-- 메일 본문 wrapper -->
   <table width="900" cellpadding="0" cellspacing="0" border="0" style="max-width:900px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #dde0e7;">
 
     <!-- 헤더 -->
@@ -232,6 +231,140 @@ def build_delay_mail_html(
               <th style="padding:10px 12px;text-align:left;color:#e2e8f0;font-weight:600;font-size:11px;letter-spacing:0.5px;border-right:1px solid #374151;white-space:nowrap;">계획완료일</th>
               <th style="padding:10px 12px;text-align:center;color:#e2e8f0;font-weight:600;font-size:11px;letter-spacing:0.5px;border-right:1px solid #374151;white-space:nowrap;">지연</th>
               <th style="padding:10px 12px;text-align:left;color:#e2e8f0;font-weight:600;font-size:11px;letter-spacing:0.5px;white-space:nowrap;">진행률</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows_html}
+          </tbody>
+        </table>
+
+        <!-- CTA 버튼 -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td align="center" style="padding:8px 0 16px;">
+              <a href="{project_url}" style="display:inline-block;padding:13px 36px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:700;letter-spacing:-0.2px;">WBS 바로가기 &#8594;</a>
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+
+    <!-- 푸터 -->
+    <tr>
+      <td style="background:#f8f9fb;border-top:1px solid #e8eaef;padding:16px 32px;font-size:11px;color:#8b90a0;text-align:center;">
+        본 메일은 WBS 관리 시스템에서 자동 발송된 알림입니다. &middot; {project_url}
+      </td>
+    </tr>
+
+  </table>
+</td></tr>
+</table>
+
+</body>
+</html>"""
+
+
+def build_task_update_mail_html(
+    assignee_name: str,
+    tasks: list,
+    project_name: str,
+    project_url: str,
+) -> str:
+    """이번주 태스크 갱신 요청 HTML 이메일 본문을 생성한다."""
+    today_str = date.today().strftime("%Y-%m-%d")
+
+    rows_html = ""
+    for t in tasks:
+        task_name = t.get("task_name") or "-"
+        subtask = t.get("subtask") or ""
+        detail = t.get("detail") or ""
+        plan_start = t.get("plan_start") or "-"
+        plan_end = t.get("plan_end") or "-"
+        progress = int(t.get("progress") or 0)
+        status = t.get("status") or ""
+
+        prog_color = (
+            "#16a34a" if progress >= 100
+            else "#2563eb" if progress >= 50
+            else "#d97706" if progress > 0
+            else "#d1d5db"
+        )
+        row_bg = "#f5f8ff" if len(rows_html) % 2 == 0 else "#ffffff"
+        rows_html += (
+            f'<tr style="border-bottom:1px solid #e8eaef;background:{row_bg};">'
+            f'<td style="padding:10px 12px;vertical-align:middle;font-weight:600;color:#1a1d24;border-right:1px solid #e8eaef;">{task_name}</td>'
+            f'<td style="padding:10px 12px;vertical-align:middle;color:#4a5068;border-right:1px solid #e8eaef;">{subtask}</td>'
+            f'<td style="padding:10px 12px;vertical-align:middle;color:#6b7280;font-size:11px;border-right:1px solid #e8eaef;">{detail}</td>'
+            f'<td style="padding:10px 12px;vertical-align:middle;font-family:Courier New,monospace;color:#4a5068;white-space:nowrap;border-right:1px solid #e8eaef;">{plan_start}</td>'
+            f'<td style="padding:10px 12px;vertical-align:middle;font-family:Courier New,monospace;color:#4a5068;white-space:nowrap;border-right:1px solid #e8eaef;">{plan_end}</td>'
+            f'<td style="padding:10px 12px;vertical-align:middle;white-space:nowrap;border-right:1px solid #e8eaef;">'
+            f'<table cellpadding="0" cellspacing="0" border="0" style="display:inline-table;vertical-align:middle;margin-right:5px;">'
+            f'<tr><td style="width:60px;height:7px;background:#e8eaef;border-radius:4px;overflow:hidden;padding:0;">'
+            f'<div style="width:{progress}%;height:7px;background:{prog_color};"></div>'
+            f'</td></tr></table>'
+            f'<span style="font-size:11px;color:#4a5068;font-family:Courier New,monospace;">{progress}%</span>'
+            f'</td>'
+            f'<td style="padding:10px 12px;vertical-align:middle;color:#4a5068;font-size:11px;">{status}</td>'
+            f'</tr>'
+        )
+
+    count = len(tasks)
+    return f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>이번주 태스크 갱신 요청</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Apple SD Gothic Neo','Malgun Gothic',Arial,sans-serif;font-size:13px;color:#1a1d24;">
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f6f9;">
+<tr><td align="center" style="padding:32px 16px;">
+
+  <!-- 메일 본문 wrapper -->
+  <table width="900" cellpadding="0" cellspacing="0" border="0" style="max-width:900px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #dde0e7;">
+
+    <!-- 헤더 -->
+    <tr>
+      <td style="background:#1e293b;padding:28px 32px;">
+        <p style="margin:0 0 6px;color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">&#128203; 이번주 태스크 갱신 요청</p>
+        <p style="margin:0;color:#94a3b8;font-size:12px;">{project_name} &middot; {today_str} 기준</p>
+      </td>
+    </tr>
+
+    <!-- 요약 바 -->
+    <tr>
+      <td style="background:#eff6ff;border-bottom:3px solid #93c5fd;padding:14px 32px;">
+        <p style="margin:0;font-size:12px;color:#2563eb;">
+          <strong style="font-size:28px;font-weight:700;display:block;line-height:1;margin-bottom:2px;">{count}</strong>
+          건 이번주 진행 예정
+        </p>
+      </td>
+    </tr>
+
+    <!-- 본문 -->
+    <tr>
+      <td style="padding:28px 32px;">
+
+        <!-- 인사말 -->
+        <p style="margin:0 0 24px;font-size:13px;color:#1a1d24;line-height:1.8;padding:16px 20px;background:#f8f9fb;border-left:4px solid #2563eb;">
+          안녕하세요, <strong style="color:#2563eb;">{assignee_name}</strong>님.<br>
+          이번주에 진행 예정인 담당 태스크가 <strong style="color:#2563eb;">{count}건</strong> 있습니다.<br>
+          아래 목록을 확인하시고 각 태스크의 <strong>일정(계획일)·진행률·진행상태</strong>를 최신 내용으로 갱신해 주시기 바랍니다.
+        </p>
+
+        <!-- 태스크 테이블 -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;margin-bottom:24px;font-size:12px;border:1px solid #dde0e7;">
+          <thead>
+            <tr style="background:#1e293b;">
+              <th style="padding:10px 12px;text-align:left;color:#e2e8f0;font-weight:600;font-size:11px;border-right:1px solid #374151;white-space:nowrap;">Task</th>
+              <th style="padding:10px 12px;text-align:left;color:#e2e8f0;font-weight:600;font-size:11px;border-right:1px solid #374151;white-space:nowrap;">서브태스크</th>
+              <th style="padding:10px 12px;text-align:left;color:#e2e8f0;font-weight:600;font-size:11px;border-right:1px solid #374151;white-space:nowrap;">세부항목</th>
+              <th style="padding:10px 12px;text-align:left;color:#e2e8f0;font-weight:600;font-size:11px;border-right:1px solid #374151;white-space:nowrap;">계획시작</th>
+              <th style="padding:10px 12px;text-align:left;color:#e2e8f0;font-weight:600;font-size:11px;border-right:1px solid #374151;white-space:nowrap;">계획완료</th>
+              <th style="padding:10px 12px;text-align:left;color:#e2e8f0;font-weight:600;font-size:11px;border-right:1px solid #374151;white-space:nowrap;">진행률</th>
+              <th style="padding:10px 12px;text-align:left;color:#e2e8f0;font-weight:600;font-size:11px;white-space:nowrap;">진행상태</th>
             </tr>
           </thead>
           <tbody>

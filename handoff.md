@@ -30,7 +30,8 @@
 ```
 wbs/
 ├── app/
-│   ├── __init__.py              # Flask 앱 팩토리 (create_app, admin 시드, context_processor)
+│   ├── __init__.py              # Flask 앱 팩토리 (create_app, admin 시드, context_processor, 스케줄러 기동)
+│   ├── scheduler.py             # APScheduler 백그라운드 스케줄러 (태스크 갱신 알림 1분 폴링)
 │   ├── auth.py                  # 인증 데코레이터 (login_required, project_access_required 등)
 │   ├── config.py                # 환경설정 (Dev/Prod/Test)
 │   ├── extensions.py            # DB 헬퍼 (get_db, close_db, init_db)
@@ -45,7 +46,8 @@ wbs/
 │   │   ├── dashboard_service.py # 대시보드 통계 (카테고리별, 담당자별, 지연업무)
 │   │   ├── ai_assistant.py      # AI 어시스턴트 (Claude CLI subprocess, 자연어 → WBS 조회/추가/수정/삭제)
 │   │   ├── import_export.py     # CSV/Excel Import/Export
-│   │   └── mail_service.py      # 지연 태스크 이메일 알림 (SMTP HTML 메일 발송)
+│   │   ├── mail_service.py      # 메일 발송 (NCP API) + HTML 빌더 (지연 알림 build_delay_mail_html, 이번주 갱신요청 build_task_update_mail_html)
+│   │   └── notification_service.py # 태스크 갱신 알림 (이번주 할당 태스크 담당자별 발송, 스케줄러가 호출)
 │   ├── routes/
 │   │   ├── __init__.py          # 블루프린트 등록 (register_blueprints)
 │   │   ├── auth.py              # 인증 라우트 (/login, /register, /logout)
@@ -90,7 +92,8 @@ wbs/
 │   ├── 010_change_history.sql   # wbs_change_history 테이블 (변경 이력 추적, 6개 필드 모니터링)
 │   ├── 011_project_history_flag.sql # project.history_enabled 플래그 (프로젝트별 이력 기록 ON/OFF, 기본 0)
 │   ├── 012_project_notice.sql   # project.notice 컬럼 (그리드 상단 marquee 공지사항, 기본 '')
-│   └── 013_api_token.sql        # user.api_token_hash 컬럼 + 인덱스 (외부 클라이언트 API 토큰, SHA-256)
+│   ├── 013_api_token.sql        # user.api_token_hash 컬럼 + 인덱스 (외부 클라이언트 API 토큰, SHA-256)
+│   └── 014_task_notify.sql      # project.task_notify_enabled / task_notify_time (태스크 갱신 알림 자동 메일 설정)
 ├── instance/                    # SQLite DB 파일 (자동 생성, gitignore 대상)
 ├── tests/                       # pytest API 테스트 스위트 (conftest + 9개 파일, 77건)
 ├── skills/
@@ -118,6 +121,8 @@ wbs/
 | updated_at | TEXT | 수정일시 (트리거 자동) |
 | history_enabled | INTEGER | 변경 이력 기록 ON/OFF (0=OFF, 1=ON, 기본 0) |
 | notice | TEXT | 그리드 상단 marquee 공지사항 (우→좌 흘림 표시, 빈 문자열이면 미표시) |
+| task_notify_enabled | INTEGER | 태스크 갱신 알림 자동 메일 ON/OFF (0=OFF, 1=ON, 기본 0) |
+| task_notify_time | TEXT | 알림 발송 시각 'HH:MM' (24h, 기본 09:00). 평일에만 발송 |
 
 ### wbs_item 테이블 (핵심)
 | 컬럼 | 타입 | 설명 |
@@ -335,6 +340,15 @@ wbs/
 - 조회 결과는 `ids` 배열과 `display` 문자열로 반환 → 프론트엔드에서 해당 행만 그리드에 필터 표시
 - **move 액션** (2026-05-15): TID(행 번호) 기준 순서 이동을 지원. `source_row`/`target_row`/`position(above|below)` 파라미터를 받아 `get_flat_items` 전역 리스트에서 source pop → target 위/아래 삽입 → `sort_order` 0..N-1 재할당 → `recalculate_codes()` 실행. parent_id는 변경하지 않음(기존 드래그앤드롭과 동일한 시맨틱). viewer는 서버에서 403
 - `analyze_schedule_gaps(project_id)`: 계획일 vs 실제 작업일 차이 분석 (지연일수, 공수 집계)
+
+### 태스크 갱신 알림 자동 메일 (APScheduler)
+- **목적**: 프로젝트별 지정 시각에, 담당자에게 이번주 할당 태스크를 메일로 보내 일정·진행률·진행상태 갱신을 유도
+- **스케줄러** (`app/scheduler.py`): `create_app()`에서 `BackgroundScheduler`를 1개 기동, **1분 간격 폴링**. `task_notify_enabled=1` 프로젝트의 `task_notify_time(HH:MM)`이 지난 **평일(월~금)** 에 **하루 1회** 발송. 중복 방지는 메모리 `_sent_today{date:set(pid)}`(날짜 바뀌면 정리). 분 단위 폴링을 쓰는 이유: 프로젝트마다 시각이 다르고 런타임에 바뀌므로 job 동적 재등록보다 단순·견고
+    - **단일 프로세스 전제**: 프로덕션은 waitress 단일 프로세스(스레드 8)라 인프로세스 스케줄러로 중복 발송 없음. 멀티프로세스(gunicorn 워커 N)로 가면 발송이 N배 되므로 외부 스케줄러/락 필요
+    - 기동 가드(`_should_start`): `TESTING`이면 미기동(테스트), `ENABLE_SCHEDULER=0`이면 미기동, Flask 개발 reloader 부모 프로세스(`WERKZEUG_RUN_MAIN!='true'`)에서는 미기동(중복 방지)
+- **발송 로직** (`app/services/notification_service.py`): `get_week_tasks`(이번주 월~일 계획기간 겹침 + 미완료) → 담당자별 그룹화 → user.name 매칭으로 이메일 조회 → `build_task_update_mail_html`로 본문 생성 → `send_html_mail`. **할당 태스크 0건인 담당자/이메일 없는 담당자는 미발송**
+- **링크 베이스 URL**: 스케줄러는 요청 컨텍스트가 없어 `request.host_url` 대신 `config.APP_BASE_URL`(env `APP_BASE_URL`, 기본 `http://localhost:5000`) 사용
+- **설정 UI**: 프로젝트 수정 모달의 멤버 섹션 바로 위 "태스크 갱신 알림"(체크박스 + 발송시간). `task_notify_enabled`/`task_notify_time`은 프로젝트 생성·수정 양쪽에서 저장
 - **동시성 제약**: `AI_MODEL=LOCAL`(Claude CLI subprocess)에서만 해당 — 복수 사용자 동시 질의 시 순차 처리(최대 120초 × N 대기 가능). GEMINI/GEMMA(OpenAI 호환 HTTP) 전환 시 subprocess 블로킹이 사라져 이 제약 완화됨
 
 ### 프론트엔드: template/wbs-manage.html 기반 재구성

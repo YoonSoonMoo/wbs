@@ -18,6 +18,10 @@ class Config:
     AI_BASE_URL = os.environ.get('AI_BASE_URL', '')
     AI_MODEL_NAME = os.environ.get('AI_MODEL_NAME', '')
 
+    # 스케줄러(태스크 갱신 알림 메일)가 메일 내 링크에 사용할 서비스 기본 URL.
+    # 요청 컨텍스트가 없어 request.host_url을 쓸 수 없으므로 환경변수로 지정.
+    APP_BASE_URL = os.environ.get('APP_BASE_URL', 'http://localhost:5000')
+
 
 class DevelopmentConfig(Config):
     DEBUG = True

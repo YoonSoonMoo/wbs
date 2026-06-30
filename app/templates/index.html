@@ -66,6 +66,24 @@
                 </div>
             </div>
 
+            <!-- 태스크 갱신 알림 설정 (admin만 표시) -->
+            {% if user_role == 'admin' %}
+            <div class="form-group" id="task-notify-section">
+                <label>태스크 갱신 알림</label>
+                <div class="task-notify-row">
+                    <label class="task-notify-toggle">
+                        <input type="checkbox" id="project-task-notify-enabled">
+                        <span>발송 사용</span>
+                    </label>
+                    <label class="task-notify-time-label">
+                        발송시간
+                        <input type="time" id="project-task-notify-time" value="09:00">
+                    </label>
+                </div>
+                <div class="form-hint">활성화 시 평일 지정 시각에 담당자별 <strong>이번주 할당 태스크</strong>를 메일로 안내합니다. (일정·진행률·진행상태 갱신 요청)</div>
+            </div>
+            {% endif %}
+
             <!-- 멤버 할당 (admin만 표시) -->
             {% if user_role == 'admin' %}
             <div class="form-group" id="member-section">

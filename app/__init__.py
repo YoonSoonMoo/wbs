@@ -25,6 +25,9 @@ def create_app(config_name=None):
     from app.routes import register_blueprints
     register_blueprints(app)
 
+    from app.scheduler import init_scheduler
+    init_scheduler(app)
+
     @app.context_processor
     def inject_user():
         return dict(

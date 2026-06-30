@@ -85,6 +85,11 @@ async function editProject(id) {
         document.getElementById('project-start').value = project.start_date || '';
         document.getElementById('project-end').value = project.end_date || '';
 
+        var notifyEnabled = document.getElementById('project-task-notify-enabled');
+        var notifyTime = document.getElementById('project-task-notify-time');
+        if (notifyEnabled) notifyEnabled.checked = !!project.task_notify_enabled;
+        if (notifyTime) notifyTime.value = (project.task_notify_time || '09:00').slice(0, 5);
+
         clearMemberList();
         await loadAvailableUsers();
         // 기존 멤버 로드
@@ -115,6 +120,10 @@ async function handleProjectSubmit(e) {
 
     if (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'admin') {
         data.members = collectMembers();
+        var notifyEnabled = document.getElementById('project-task-notify-enabled');
+        var notifyTime = document.getElementById('project-task-notify-time');
+        if (notifyEnabled) data.task_notify_enabled = notifyEnabled.checked ? 1 : 0;
+        if (notifyTime) data.task_notify_time = notifyTime.value || '09:00';
     }
 
     try {

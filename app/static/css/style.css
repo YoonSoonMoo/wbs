@@ -787,6 +787,31 @@ body {
     padding: 0 4px;
 }
 
+/* ===== Task Notify Setting ===== */
+.task-notify-row {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+.task-notify-toggle,
+.task-notify-time-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text, #1a1d24);
+    cursor: pointer;
+}
+.task-notify-toggle input[type="checkbox"] { cursor: pointer; }
+.task-notify-time-label input[type="time"] {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: var(--font);
+}
+
 /* ===== User Management Modal ===== */
 .user-mgmt-modal { width: 1040px; max-width: 95vw; padding: 0; }
 .user-mgmt-modal .modal-header {
