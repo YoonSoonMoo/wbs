@@ -141,6 +141,36 @@ async function handleProjectSubmit(e) {
     }
 }
 
+async function sendTaskUpdateNow() {
+    if (!editingProjectId) {
+        showToast('먼저 프로젝트를 저장한 뒤 발송할 수 있습니다.', 'error');
+        return;
+    }
+    if (!confirm('이번주 할당 태스크를 담당자에게 지금 메일로 발송하시겠습니까?')) return;
+
+    var btn = document.querySelector('.task-notify-sendnow');
+    if (btn) { btn.disabled = true; btn.textContent = '발송 중...'; }
+    try {
+        var res = await API.post('/api/wbs/' + editingProjectId + '/send-task-update-mail', {});
+        var sent = (res && res.sent) || 0;
+        var total = (res && res.total) || 0;
+        if (total === 0) {
+            showToast('이번주 할당된 태스크가 없습니다.', 'info');
+        } else if (sent === total) {
+            showToast(sent + '명에게 발송 완료', 'success');
+        } else {
+            // 일부 실패 — 사유 함께 안내
+            var fails = (res.results || []).filter(function (r) { return !r.success; })
+                .map(function (r) { return r.assignee + '(' + (r.message || '실패') + ')'; });
+            showToast('발송 ' + sent + '/' + total + ' 완료. 실패: ' + fails.join(', '), 'error');
+        }
+    } catch (e) {
+        showToast('발송에 실패했습니다.', 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '즉시발송'; }
+    }
+}
+
 async function deleteProject(id, name) {
     if (!confirm('"' + name + '" 프로젝트를 삭제하시겠습니까?\n모든 WBS 항목도 함께 삭제됩니다.')) return;
     try {

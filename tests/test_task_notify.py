@@ -83,6 +83,23 @@ def test_send_task_update_mails_groups_and_skips(app, admin_client, monkeypatch)
     assert '이번주 태스크' in calls[0]['subject']
 
 
+def test_send_task_update_mail_endpoint(admin_client, viewer_client, monkeypatch):
+    """즉시발송 엔드포인트: admin 발송 / viewer 차단."""
+    from app.services import notification_service
+    pid = admin_client.post('/api/projects', json={'name': 'NowProj'}).get_json()['id']
+
+    monkeypatch.setattr(notification_service, 'send_html_mail', lambda **kw: (True, 'ok'))
+
+    # viewer는 admin 권한 없어 차단
+    resp_v = viewer_client.post(f'/api/wbs/{pid}/send-task-update-mail', json={})
+    assert resp_v.status_code in (401, 403)
+
+    # admin은 호출 가능 (할당 없으면 sent 0)
+    resp = admin_client.post(f'/api/wbs/{pid}/send-task-update-mail', json={})
+    assert resp.status_code == 200
+    assert resp.get_json()['sent'] == 0
+
+
 def test_send_task_update_mails_empty_no_send(app, admin_client, monkeypatch):
     """이번주 할당 태스크가 없으면 메일을 보내지 않는다."""
     pid = admin_client.post('/api/projects', json={'name': 'EmptyProj'}).get_json()['id']

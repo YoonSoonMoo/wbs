@@ -241,6 +241,18 @@ def send_delay_mail(project_id):
     return jsonify({'sent': sent_count, 'total': len(by_assignee), 'results': results})
 
 
+@api_wbs_bp.route('/<int:project_id>/send-task-update-mail', methods=['POST'])
+@api_login_required
+@project_access_required('admin')
+def send_task_update_mail(project_id):
+    """이번주 할당 태스크 갱신 요청 메일을 즉시 발송한다. (테스트/수동 트리거)"""
+    from app.services import notification_service
+
+    base_url = request.host_url.rstrip('/')
+    result = notification_service.send_task_update_mails(project_id, base_url=base_url)
+    return jsonify(result)
+
+
 # --- 변경 이력 ---
 
 @api_wbs_bp.route('/<int:project_id>/history', methods=['GET'])
