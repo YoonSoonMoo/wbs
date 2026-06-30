@@ -818,8 +818,12 @@ body {
     color: var(--text, #1a1d24);
     cursor: pointer;
 }
-.task-notify-toggle input[type="checkbox"] { cursor: pointer; }
+/* 발송시간 그룹을 오른쪽 끝(프로젝트 종료일 우측 끝)에 맞춤 */
+.task-notify-time-label { margin-left: auto; }
+/* form-group input width:100% 무력화 — 체크박스/시간 입력은 내용 크기로 */
+.task-notify-toggle input[type="checkbox"] { width: auto; cursor: pointer; }
 .task-notify-time-label input[type="time"] {
+    width: auto;
     padding: 6px 8px;
     border: 1px solid var(--border);
     border-radius: 4px;
