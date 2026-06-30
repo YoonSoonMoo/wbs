@@ -589,6 +589,21 @@ body {
 }
 .form-row .form-group { flex: 1; }
 
+/* 프로젝트 모달 2열 레이아웃 */
+.project-modal-content { width: 880px; }
+.project-form-grid {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+}
+.project-form-grid .pf-col {
+    flex: 1;
+    min-width: 0;
+}
+@media (max-width: 720px) {
+    .project-form-grid { flex-direction: column; gap: 0; }
+}
+
 .form-group .label-hint {
     font-weight: 400;
     color: var(--muted, #6b7280);

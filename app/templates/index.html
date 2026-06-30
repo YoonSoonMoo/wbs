@@ -21,23 +21,26 @@
 
 <!-- 프로젝트 생성/수정 모달 -->
 <div id="project-modal" class="modal" style="display:none;">
-    <div class="modal-content">
+    <div class="modal-content project-modal-content">
         <div class="modal-header">
             <h2 id="modal-title">새 프로젝트</h2>
             <button class="modal-close" onclick="closeModal()">&times;</button>
         </div>
         <form id="project-form" onsubmit="handleProjectSubmit(event)">
-            <div class="form-group">
-                <label for="project-name">프로젝트명 *</label>
-                <input type="text" id="project-name" required placeholder="프로젝트명을 입력하세요">
-            </div>
-            <div class="form-group">
-                <label for="project-desc" title="프로젝트 전체 개요와 주요 마일스톤을 기입하세요. AI 분석 시 프로젝트 전반 상황 판단의 근거로 활용됩니다.">
-                    설명 <span class="label-hint" aria-hidden="true">(개요 · 마일스톤)</span>
-                </label>
-                <textarea id="project-desc" rows="8"
-                          title="프로젝트의 목적·범위·주요 마일스톤을 기입하세요. AI 분석(&quot;프로젝트 분석&quot;, &quot;전반적인 진척상황&quot; 등)에서 이 내용을 참고해 PM에게 조언합니다."
-                          placeholder="예시)
+            <div class="project-form-grid">
+                <!-- 좌측: 프로젝트명 · 설명 · 공지사항 -->
+                <div class="pf-col">
+                    <div class="form-group">
+                        <label for="project-name">프로젝트명 *</label>
+                        <input type="text" id="project-name" required placeholder="프로젝트명을 입력하세요">
+                    </div>
+                    <div class="form-group">
+                        <label for="project-desc" title="프로젝트 전체 개요와 주요 마일스톤을 기입하세요. AI 분석 시 프로젝트 전반 상황 판단의 근거로 활용됩니다.">
+                            설명 <span class="label-hint" aria-hidden="true">(개요 · 마일스톤)</span>
+                        </label>
+                        <textarea id="project-desc" rows="10"
+                                  title="프로젝트의 목적·범위·주요 마일스톤을 기입하세요. AI 분석(&quot;프로젝트 분석&quot;, &quot;전반적인 진척상황&quot; 등)에서 이 내용을 참고해 PM에게 조언합니다."
+                                  placeholder="예시)
 [목적] 내부 WBS 관리 시스템 구축
 [범위] 프로젝트/유저/WBS CRUD, 대시보드, AI 어시스턴트
 [주요 마일스톤]
@@ -45,53 +48,59 @@
  - M2 (5/31): 대시보드·통계 공개
  - M3 (6/30): AI 어시스턴트 GA
 [주요 리스크] 외부 메일 API 연동 일정, Claude CLI 의존성"></textarea>
-                <div class="form-hint">프로젝트 전체 개요와 마일스톤을 기입해 두면, AI 분석 시 전반적 상황 파악과 PM 조언에 활용됩니다.</div>
-            </div>
-            <div class="form-group">
-                <label for="project-notice" title="WBS 그리드 상단에 흐르는 텍스트로 표시되는 공지사항입니다.">
-                    공지사항 <span class="label-hint" aria-hidden="true">(그리드 상단 흘림 표시)</span>
-                </label>
-                <textarea id="project-notice" rows="2"
-                          placeholder="예: [5/25 17:00] 마일스톤 M2 점검 회의 — 진행률 100% 미만 항목은 사전 코멘트 부탁드립니다."></textarea>
-                <div class="form-hint">입력한 문구는 WBS 그리드 상단 헤더에 우→좌로 흐르는 알림으로 표시됩니다. (비워두면 표시되지 않음)</div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="project-start">시작일</label>
-                    <input type="date" id="project-start">
+                        <div class="form-hint">프로젝트 전체 개요와 마일스톤을 기입해 두면, AI 분석 시 전반적 상황 파악과 PM 조언에 활용됩니다.</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="project-notice" title="WBS 그리드 상단에 흐르는 텍스트로 표시되는 공지사항입니다.">
+                            공지사항 <span class="label-hint" aria-hidden="true">(그리드 상단 흘림 표시)</span>
+                        </label>
+                        <textarea id="project-notice" rows="2"
+                                  placeholder="예: [5/25 17:00] 마일스톤 M2 점검 회의 — 진행률 100% 미만 항목은 사전 코멘트 부탁드립니다."></textarea>
+                        <div class="form-hint">입력한 문구는 WBS 그리드 상단 헤더에 우→좌로 흐르는 알림으로 표시됩니다. (비워두면 표시되지 않음)</div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="project-end">종료일</label>
-                    <input type="date" id="project-end">
-                </div>
-            </div>
 
-            <!-- 태스크 갱신 알림 설정 (admin만 표시) -->
-            {% if user_role == 'admin' %}
-            <div class="form-group" id="task-notify-section">
-                <label>태스크 갱신 알림</label>
-                <div class="task-notify-row">
-                    <label class="task-notify-toggle">
-                        <input type="checkbox" id="project-task-notify-enabled">
-                        <span>발송 사용</span>
-                    </label>
-                    <label class="task-notify-time-label">
-                        발송시간
-                        <input type="time" id="project-task-notify-time" value="09:00">
-                    </label>
-                </div>
-                <div class="form-hint">활성화 시 평일 지정 시각에 담당자별 <strong>이번주 할당 태스크</strong>를 메일로 안내합니다. (일정·진행률·진행상태 갱신 요청)</div>
-            </div>
-            {% endif %}
+                <!-- 우측: 기간 · 알림 · 멤버 -->
+                <div class="pf-col">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="project-start">프로젝트 시작일</label>
+                            <input type="date" id="project-start">
+                        </div>
+                        <div class="form-group">
+                            <label for="project-end">프로젝트 종료일</label>
+                            <input type="date" id="project-end">
+                        </div>
+                    </div>
 
-            <!-- 멤버 할당 (admin만 표시) -->
-            {% if user_role == 'admin' %}
-            <div class="form-group" id="member-section">
-                <label>프로젝트 멤버</label>
-                <div id="member-list"></div>
-                <button type="button" class="btn" onclick="addMemberRow()" style="margin-top:6px;">+ 멤버 추가</button>
+                    <!-- 태스크 갱신 알림 설정 (admin만 표시) -->
+                    {% if user_role == 'admin' %}
+                    <div class="form-group" id="task-notify-section">
+                        <label>태스크 갱신 알림</label>
+                        <div class="task-notify-row">
+                            <label class="task-notify-toggle">
+                                <input type="checkbox" id="project-task-notify-enabled">
+                                <span>발송 사용</span>
+                            </label>
+                            <label class="task-notify-time-label">
+                                발송시간
+                                <input type="time" id="project-task-notify-time" value="09:00">
+                            </label>
+                        </div>
+                        <div class="form-hint">활성화 시 평일 지정 시각에 담당자별 <strong>이번주 할당 태스크</strong>를 메일로 안내합니다. (일정·진행률·진행상태 갱신 요청)</div>
+                    </div>
+                    {% endif %}
+
+                    <!-- 멤버 할당 (admin만 표시) -->
+                    {% if user_role == 'admin' %}
+                    <div class="form-group" id="member-section">
+                        <label>프로젝트 멤버</label>
+                        <div id="member-list"></div>
+                        <button type="button" class="btn" onclick="addMemberRow()" style="margin-top:6px;">+ 멤버 추가</button>
+                    </div>
+                    {% endif %}
+                </div>
             </div>
-            {% endif %}
 
             <div class="form-actions">
                 <button type="button" class="btn" onclick="closeModal()">취소</button>
