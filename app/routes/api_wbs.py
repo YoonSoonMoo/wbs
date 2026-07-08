@@ -1,4 +1,4 @@
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 
 from app.auth import api_login_required, project_access_required
 from app.models import change_history, wbs_item as wbs_model
@@ -208,7 +208,7 @@ def send_delay_mail(project_id):
         by_assignee.setdefault(name, []).append(item)
 
     db = get_db()
-    base_url = request.host_url.rstrip('/')
+    base_url = (current_app.config.get('APP_BASE_URL') or request.host_url).rstrip('/')
     project_url = f"{base_url}/project/{project_id}/wbs"
 
     results = []
@@ -248,7 +248,7 @@ def send_task_update_mail(project_id):
     """이번주 할당 태스크 갱신 요청 메일을 즉시 발송한다. (테스트/수동 트리거)"""
     from app.services import notification_service
 
-    base_url = request.host_url.rstrip('/')
+    base_url = (current_app.config.get('APP_BASE_URL') or request.host_url).rstrip('/')
     result = notification_service.send_task_update_mails(project_id, base_url=base_url)
     return jsonify(result)
 

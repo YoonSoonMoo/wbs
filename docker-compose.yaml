@@ -19,6 +19,8 @@ services:
       # 컨테이너 시간대를 한국시간으로 (스케줄러 발송시각·메일 표시·이력 시각 일관).
       # Dockerfile에서 tzdata 설치 + ENV TZ를 두지만, 여기서도 명시해 Coolify에서 가시화.
       TZ: Asia/Seoul
+      # 메일 내 'WBS 바로가기' 링크의 운영 기본 URL (스케줄러/수동발송 공통).
+      APP_BASE_URL: http://ru2ev5blwmk402ze2hmeidln.172.22.3.15.sslip.io
     volumes:
       # SQLite DB 영속화 — 재배포/재시작에도 데이터 유지
       - wbs-data:/app/instance

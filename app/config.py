@@ -20,7 +20,9 @@ class Config:
 
     # 스케줄러(태스크 갱신 알림 메일)가 메일 내 링크에 사용할 서비스 기본 URL.
     # 요청 컨텍스트가 없어 request.host_url을 쓸 수 없으므로 환경변수로 지정.
-    APP_BASE_URL = os.environ.get('APP_BASE_URL', 'http://localhost:5000')
+    # 미설정 시(로컬): 수동발송은 request.host_url(localhost:5000), 스케줄러는 localhost:5000 사용.
+    # 운영(개발환경): docker-compose에서 APP_BASE_URL을 sslip.io 도메인으로 지정.
+    APP_BASE_URL = os.environ.get('APP_BASE_URL', '')
 
     # 스케줄러 발송시각 비교 기준 시간대. 컨테이너가 UTC여도 한국시간으로 발송하도록.
     APP_TZ = os.environ.get('APP_TZ', 'Asia/Seoul')

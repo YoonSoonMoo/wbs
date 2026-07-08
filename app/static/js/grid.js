@@ -1347,9 +1347,9 @@ function renderStatsModal(data) {
     // ── Task(중분류)별 현황 ──
     if (tasks.length > 0) {
         h += '<div class="stats-sect" style="margin-top:18px">Task별 현황'
-            + '<button type="button" class="stats-task-toggle" onclick="toggleDoneTasks(this)">완료 숨김</button>'
+            + '<button type="button" class="stats-task-toggle active" onclick="toggleDoneTasks(this)">완료 표시</button>'
             + '</div>';
-        h += '<div class="stats-task-grid" id="statsTaskGrid">';
+        h += '<div class="stats-task-grid hide-done" id="statsTaskGrid">';
         tasks.forEach(function(t) {
             var total = t.total || 0;
             var done = t.completed || 0;

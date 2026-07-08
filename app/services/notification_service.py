@@ -73,7 +73,7 @@ def send_task_update_mails(project_id, base_url=None):
         by_assignee.setdefault(name, []).append(item)
 
     if base_url is None:
-        base_url = current_app.config.get('APP_BASE_URL', 'http://localhost:5000')
+        base_url = current_app.config.get('APP_BASE_URL') or 'http://localhost:5000'
     base_url = base_url.rstrip('/')
     project_url = f"{base_url}/project/{project_id}/wbs"
 
