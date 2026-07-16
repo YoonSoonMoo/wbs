@@ -218,7 +218,7 @@
                 <div class="step-card">
                     <div class="step-num">01</div>
                     <h3>프로젝트 생성 및 멤버 할당</h3>
-                    <p>관리자가 프로젝트를 만들고 멤버를 개발자 / 뷰어 권한으로 초대합니다. 프로젝트별 접근 제어가 기본 적용됩니다.</p>
+                    <p>관리자가 프로젝트를 만들고 멤버를 PM / PL / 개발자 / 뷰어 권한으로 초대합니다. 프로젝트별 접근 제어가 기본 적용됩니다.</p>
                 </div>
                 <div class="step-card">
                     <div class="step-num">02</div>
@@ -237,11 +237,19 @@
                 <div class="role-grid">
                     <div class="role-card">
                         <div class="role-badge role-admin">Admin</div>
-                        <p>전역 관리자. 프로젝트·유저 생성·수정·삭제, 권한 부여, 패스워드 리셋, 모든 프로젝트 접근 가능.</p>
+                        <p>전역 관리자. 유저·프로젝트 생성, 백업/복원, 권한 부여, 모든 프로젝트 접근 가능.</p>
+                    </div>
+                    <div class="role-card">
+                        <div class="role-badge role-pm">PM</div>
+                        <p>프로젝트 총괄. 담당 프로젝트의 수정·삭제·초기화, 메일 발송, AI 어시스턴트까지 전권. (유저관리·백업·새 프로젝트 제외)</p>
+                    </div>
+                    <div class="role-card">
+                        <div class="role-badge role-pl">PL</div>
+                        <p>프로젝트 리더. WBS 편집과 계획 일정(계획시작·완료) 수정, AI 어시스턴트 사용 가능. 메일 발송은 제외됩니다.</p>
                     </div>
                     <div class="role-card">
                         <div class="role-badge role-dev">Developer</div>
-                        <p>프로젝트 참여자. 할당된 프로젝트의 WBS 항목을 추가·수정·삭제할 수 있습니다.</p>
+                        <p>담당 프로젝트의 WBS 항목을 편집합니다. 계획시작·완료 일정 변경은 PM/PL에게 요청합니다.</p>
                     </div>
                     <div class="role-card">
                         <div class="role-badge role-viewer">Viewer</div>

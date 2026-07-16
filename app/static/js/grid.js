@@ -40,6 +40,11 @@ function esc(s) {
     return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// 계획시작/계획완료 셀을 developer가 클릭했을 때 안내
+function showPlanLockedAlert() {
+    showToast('계획시작/계획완료는 PM/PL에게 요청하세요.', 'error');
+}
+
 function renderGrid() {
     var tbody = document.getElementById('wbsBody');
     var sv = (document.getElementById('searchInput').value || '').toLowerCase();
@@ -117,6 +122,8 @@ function renderGrid() {
     }
 
     var canEdit = (typeof USER_ROLE !== 'undefined' && USER_ROLE !== 'viewer');
+    // 계획시작/계획완료는 pl/pm/admin만 수정 가능 (developer 불가)
+    var planLocked = canEdit && USER_ROLE === 'developer';
     var ceAttr = canEdit ? ' contenteditable="true"' : '';
     var editClass = canEdit ? 'editable' : '';
     var canDrag = canEdit && !sortCol && !sv && !sv2 && !showMine && !showThisWeek && !showDelayed && !showPlanStartSort;
@@ -146,8 +153,11 @@ function renderGrid() {
         h += '<td class="' + editClass + '"' + ceAttr + ' data-col="subtask">' + esc(row.subtask) + '</td>';
         h += '<td class="expandable" data-col="detail">' + esc(row.detail) + '</td>';
         h += '<td class="' + editClass + ' cell-center"' + ceAttr + ' data-col="assignee">' + esc(row.assignee) + '</td>';
-        h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="plan_start">' + esc(shortDate(row.plan_start)) + '</td>';
-        h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="plan_end">' + esc(shortDate(row.plan_end)) + '</td>';
+        var planAttr = planLocked
+            ? ' class="cell-date plan-locked" onclick="showPlanLockedAlert()" title="계획시작/계획완료는 PM/PL에게 요청하세요"'
+            : ' class="' + editClass + ' cell-date"' + ceAttr;
+        h += '<td' + planAttr + ' data-col="plan_start">' + esc(shortDate(row.plan_start)) + '</td>';
+        h += '<td' + planAttr + ' data-col="plan_end">' + esc(shortDate(row.plan_end)) + '</td>';
         h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="actual_start">' + esc(shortDate(row.actual_start)) + '</td>';
         h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="actual_end">' + esc(shortDate(row.actual_end)) + '</td>';
         h += '<td class="' + editClass + ' cell-num"' + ceAttr + ' data-col="effort">' + esc(row.effort) + '</td>';
@@ -264,13 +274,13 @@ function updateAlerts() {
             ch += '<span class="alert-chip"><span class="chip-task">' + esc(delayed[i].label) + '</span><span class="chip-days">+' + delayed[i].days + '일</span></span>';
         }
         con.innerHTML = ch;
-        if (mailBtn) mailBtn.style.display = (USER_ROLE === 'admin') ? '' : 'none';
+        if (mailBtn) mailBtn.style.display = (['admin', 'pm'].indexOf(USER_ROLE) >= 0) ? '' : 'none';
     }
 }
 
 // ===== Delay Mail =====
 async function sendDelayMail() {
-    if (USER_ROLE !== 'admin') { showToast('메일 전송 권한이 없습니다.', 'error'); return; }
+    if (['admin', 'pm'].indexOf(USER_ROLE) < 0) { showToast('메일 전송 권한이 없습니다.', 'error'); return; }
     var btn = document.getElementById('alertMailBtn');
     if (!btn) return;
     var confirmed = window.confirm('지연된 태스크를 각 담당자에게 메일로 전송할까요?');
@@ -1062,7 +1072,7 @@ function exportExcel() {
 
 // ===== AI Assistant =====
 function sendAiQuery() {
-    if (USER_ROLE !== 'admin') { showToast('AI Assistant는 관리자 전용입니다.', 'error'); return; }
+    if (['admin', 'pm', 'pl'].indexOf(USER_ROLE) < 0) { showToast('AI Assistant 사용 권한이 없습니다.', 'error'); return; }
     var input = document.getElementById('aiInput');
     if (!input) return;
     var query = input.value.trim();
@@ -1279,10 +1289,10 @@ function renderStatsModal(data) {
     h += _statsKpi('전체 공수', ov.total_effort + 'd', _statsDelta(ov.delta_total_effort, 'd'), '');
     h += _statsKpi('완료 공수', ov.completed_effort + 'd', _statsDelta(ov.delta_completed_effort, 'd'), '');
     h += _statsKpi('전체 진척률', ov.progress_rate + '%', '', '');
-    // 주간 진척률(현재) = 진행중 주차(weekly[0])의 주간 달성률
+    // 주간 계획 준수율(현재) = 진행중 주차(weekly[0])의 주간 달성률
     var curWeekRate = weekly.length > 0 ? weekly[0].progress_rate : 0;
     var curWeekColor = _rateColor(curWeekRate);
-    h += _statsKpi('주간 진척률(현재)', '<span style="color:' + curWeekColor + '">' + curWeekRate + '%</span>', '', '');
+    h += _statsKpi('주간 계획 준수율(현재)', '<span style="color:' + curWeekColor + '">' + curWeekRate + '%</span>', '', '');
     h += '</div>';
 
     // ── 주차별 진척 현황 (CSS Grid) ──
@@ -1302,8 +1312,8 @@ function renderStatsModal(data) {
         + _tip('신규', '해당 주차에 새로 등록된 태스크 수&#10;(created_at 이 해당 주 범위 안에 있는 항목)')
         + _tip('주간완료', '계획 종료일과 실제 종료일이 모두 해당 주 범위 안에 있는 태스크 수&#10;표기: 완료 / 예정')
         + _tip('누적완료', '관측 구간 시작 주부터 해당 주차까지 주간완료의 누적 합')
-        + _tip('계획 준수율', '계산식: 누적완료 ÷ 전체 태스크 × 100&#10;전체 태스크 중 계획 주차에 맞춰 완료된 비율 (관측 9주 기준)')
-        + _tip('주간 진척률', '계산식: 주간완료 ÷ 계획완료(예정) × 100&#10;해당 주차에 끝내기로 한 일을 실제로 끝낸 비율')
+        + _tip('누적 완료율', '계산식: 누적완료 ÷ 전체 태스크 × 100&#10;전체 물량 중 계획 주차에 맞춰 완료한 태스크의 누적 비율. 절대값보다 매주 증가 추세로 해석 (관측 9주 기준)')
+        + _tip('주간 계획 준수율', '계산식: 주간완료 ÷ 계획완료(예정) × 100&#10;해당 주차에 끝내기로 한 일을 그 주에 실제로 끝낸 비율 (100% = 계획대로)')
         + _tip('전체공수', '해당 주차 기준 누적 전체 공수(d)&#10;옆 +Nd 는 해당 주에 신규 등록된 공수')
         + _tip('완료공수', '해당 주차에 주간완료된 태스크들의 공수(d) 합')
         + '</div>';
@@ -1323,7 +1333,7 @@ function renderStatsModal(data) {
         h += '<span style="color:#18a058;font-weight:600">' + w.completed_week + ' / <span style="color:#8b92a5">' + w.planned_week + '</span></span>';
         // 누적완료 (관측 구간 내 주간완료의 누적 합)
         h += '<span>' + w.cumulative_completed_week + '</span>';
-        // 계획 준수율 (누적완료 / 전체)
+        // 누적 완료율 (누적완료 / 전체)
         if (w.total_tasks > 0) {
             var cumRate = Math.round(w.cumulative_completed_week / w.total_tasks * 100);
             var cumColor = _rateColor(cumRate);
@@ -1332,7 +1342,7 @@ function renderStatsModal(data) {
         } else {
             h += '<span style="color:#c8cdd8">-</span>';
         }
-        // 주간 진척률
+        // 주간 계획 준수율
         h += '<span><span class="stats-rate-inline"><span class="stats-rate-inline-fill" style="width:' + w.progress_rate + '%;background:' + rateColor + '"></span></span>'
             + '<span style="color:' + rateColor + ';font-weight:600">' + w.progress_rate + '%</span> ' + _smDelta(w.delta_rate, '%') + '</span>';
         // 전체공수
@@ -1429,9 +1439,9 @@ function renderStatsModal(data) {
         h += '</div>';
     }
 
-    // ── 주간 진척률 추이 (line chart) ──
+    // ── 주간 계획 준수율 추이 (line chart) ──
     if (weekly.length > 0) {
-        h += '<div class="stats-card stats-trend-card"><div class="stats-card-title"><span class="dot" style="background:#18a058"></span>주간 진척률 추이</div>';
+        h += '<div class="stats-card stats-trend-card"><div class="stats-card-title"><span class="dot" style="background:#18a058"></span>주간 계획 준수율 추이</div>';
         h += '<div class="stats-chart-area"><canvas id="statsTrendChart"></canvas></div></div>';
     }
 

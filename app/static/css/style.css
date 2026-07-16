@@ -1179,7 +1179,7 @@ body {
     font-size: 20px; font-weight: 700; color: #0f1220;
     text-align: center; margin-bottom: 22px;
 }
-.role-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.role-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 18px; }
 .role-card {
     background: #fff; border: 1px solid #eceff5; border-radius: 10px; padding: 22px;
 }
@@ -1189,6 +1189,8 @@ body {
     margin-bottom: 12px; text-transform: uppercase;
 }
 .role-admin  { background: #fdecec; color: #c6342a; }
+.role-pm     { background: #f3ecfd; color: #7c3aed; }
+.role-pl     { background: #fef3e2; color: #d97706; }
 .role-dev    { background: #e8f5ee; color: #217346; }
 .role-viewer { background: #eef2fb; color: #2B579A; }
 .role-card p { font-size: 13px; color: #50566a; line-height: 1.6; }

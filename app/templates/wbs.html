@@ -29,7 +29,7 @@
       {% endif %}
       <div class="top-bar-actions">
         <span class="btn btn-top" style="cursor:default;opacity:0.7;">{{ user_name }}{% if project_role == 'admin' %}
-          (관리자){% elif project_role == 'viewer' %} (뷰어){% endif %}</span>
+          (관리자){% elif project_role == 'pm' %} (PM){% elif project_role == 'pl' %} (PL){% elif project_role == 'developer' %} (개발자){% elif project_role == 'viewer' %} (뷰어){% endif %}</span>
         <a href="/logout" class="btn btn-top">로그아웃</a>
         <a href="/" class="btn btn-top">📋 대시보드</a>
         <button class="btn btn-top" onclick="openStatsModal()">📊 통계</button>
@@ -58,14 +58,14 @@
       <span class="alert-label">오늘의 알림</span>
       <span class="alert-count" id="alertCount">0</span>
       <div class="alert-items" id="alertItems"><span class="alert-empty">확인 중...</span></div>
-      {% if project_role == 'admin' %}
+      {% if project_role in ['admin', 'pm'] %}
       <button class="btn btn-alert-mail" id="alertMailBtn" onclick="sendDelayMail()" style="display:none"
         title="지연 태스크를 담당자에게 메일로 알림">📧 메일 전송</button>
       {% endif %}
     </div>
 
-    {% if project_role == 'admin' %}
-    <!-- AI ASSISTANT (admin 전용) -->
+    {% if project_role in ['admin', 'pm', 'pl'] %}
+    <!-- AI ASSISTANT (admin/PM/PL) -->
     <div class="ai-bar" id="aiBar">
       <div class="ai-bar-icon">AI Assistant</div>
       <input type="text" class="ai-input" id="aiInput" placeholder="무엇을 도와드릴까요? (예: 지연된 업무 확인, 항목 추가, 담당자별 필터...)"

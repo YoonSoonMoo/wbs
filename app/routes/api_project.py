@@ -1,6 +1,6 @@
 from flask import Blueprint, g, jsonify, request
 
-from app.auth import admin_required, api_login_required
+from app.auth import admin_required, api_login_required, project_access_required
 from app.extensions import get_db
 from app.models import project as project_model
 from app.services.auth_service import get_all_users, get_project_members, set_project_members
@@ -12,11 +12,11 @@ api_project_bp = Blueprint('api_project', __name__)
 @api_login_required
 def list_projects():
     if g.user['role'] == 'admin':
-        projects = project_model.get_all_projects()
+        projects = [dict(p, my_role='admin') for p in project_model.get_all_projects()]
     else:
         db = get_db()
         rows = db.execute(
-            """SELECT p.* FROM project p
+            """SELECT p.*, pm.role AS my_role FROM project p
                JOIN project_member pm ON p.id = pm.project_id
                WHERE pm.user_id = ?
                ORDER BY p.created_at DESC""",
@@ -55,7 +55,7 @@ def get_project(project_id):
 
 @api_project_bp.route('/<int:project_id>', methods=['PUT'])
 @api_login_required
-@admin_required
+@project_access_required('pm')
 def update_project(project_id):
     data = request.get_json()
     if not data:
@@ -67,6 +67,7 @@ def update_project(project_id):
 
     project_model.update_project(project_id, data)
 
+    # 이 라우트는 pm 이상만 도달(project_access_required('pm')) → 멤버/역할 지정 허용
     if 'members' in data:
         set_project_members(project_id, data['members'])
 
@@ -75,7 +76,7 @@ def update_project(project_id):
 
 @api_project_bp.route('/<int:project_id>', methods=['DELETE'])
 @api_login_required
-@admin_required
+@project_access_required('pm')
 def delete_project(project_id):
     project = project_model.get_project(project_id)
     if not project:
@@ -87,9 +88,9 @@ def delete_project(project_id):
 
 @api_project_bp.route('/<int:project_id>/history-flag', methods=['PATCH'])
 @api_login_required
-@admin_required
+@project_access_required('pm')
 def set_history_flag(project_id):
-    """프로젝트의 변경 이력 기록 ON/OFF 토글. (admin 전용)"""
+    """프로젝트의 변경 이력 기록 ON/OFF 토글. (admin/PM)"""
     project = project_model.get_project(project_id)
     if not project:
         return jsonify({'error': '프로젝트를 찾을 수 없습니다.'}), 404

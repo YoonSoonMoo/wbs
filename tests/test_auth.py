@@ -43,7 +43,7 @@ def test_login_inactive_user_blocked(client, app, viewer_user):
     assert resp.status_code == 200
 
 
-def test_register_creates_viewer(client, app):
+def test_register_creates_general_user(client, app):
     resp = client.post(
         '/register',
         data={
@@ -59,7 +59,8 @@ def test_register_creates_viewer(client, app):
     with app.app_context():
         users = {u['email']: u for u in auth_service.get_all_users()}
         assert 'newbie@test.local' in users
-        assert users['newbie@test.local']['role'] == 'viewer'
+        # 전역 역할은 관리자/일반 2단계 → 신규 가입자는 일반 사용자(developer)
+        assert users['newbie@test.local']['role'] == 'developer'
 
 
 def test_register_password_mismatch(client):

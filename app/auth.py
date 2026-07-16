@@ -49,7 +49,7 @@ def api_login_required(f):
 
 
 def project_access_required(min_role='viewer'):
-    role_level = {'viewer': 0, 'developer': 1, 'admin': 2}
+    role_level = {'viewer': 0, 'developer': 1, 'pl': 2, 'pm': 3, 'admin': 4}
 
     def decorator(f):
         @wraps(f)

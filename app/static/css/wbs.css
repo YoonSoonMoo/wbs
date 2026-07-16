@@ -430,6 +430,9 @@ body.is-dragging *{cursor:grabbing !important;}
 
 body.tour-active { overflow: hidden; }
 
+/* ===== 계획시작/계획완료 수정 잠금 (developer) ===== */
+#wbsBody td.plan-locked { cursor: not-allowed; color: #97a0af; background: rgba(148, 163, 184, .07); }
+
 /* ===== 다른 사용자가 편집 중인 셀 표시 (presence) ===== */
 #wbsBody td.remote-editing {
     position: relative;         /* 배지 위치 기준(단, z-index는 주지 않아 배지가 헤더 위로 뜨게 함) */

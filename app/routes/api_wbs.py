@@ -23,7 +23,7 @@ def _publish_change(project_id, action, item_ids=None):
 
 
 def _check_item_write(item_id):
-    """항목 ID로부터 프로젝트 접근 권한을 확인한다. (participant 이상)"""
+    """항목 ID로부터 프로젝트 접근 권한을 확인한다. (developer 이상)"""
     item = wbs_model.get_item(item_id)
     if not item:
         return None, jsonify({'error': '항목을 찾을 수 없습니다.'}), 404
@@ -31,6 +31,19 @@ def _check_item_write(item_id):
     if not role or role == 'viewer':
         return None, jsonify({'error': '권한이 부족합니다.'}), 403
     return item, None, None
+
+
+_PLAN_DATE_FIELDS = ('plan_start', 'plan_end')
+
+
+def _plan_date_guard(project_id, data):
+    """계획시작/계획완료는 pl/pm/admin만 수정 가능. developer 위반 시 (응답, 403), 아니면 None."""
+    if not any(f in data for f in _PLAN_DATE_FIELDS):
+        return None
+    role = get_project_role(g.user['id'], project_id)
+    if role in ('pl', 'pm', 'admin'):
+        return None
+    return jsonify({'error': '계획시작/계획완료는 PM/PL에게 요청하세요.'}), 403
 
 
 # --- WBS 항목 CRUD ---
@@ -78,6 +91,9 @@ def update_item(item_id):
     data = request.get_json()
     if not data:
         return jsonify({'error': '수정할 데이터가 없습니다.'}), 400
+    guard = _plan_date_guard(item['project_id'], data)
+    if guard:
+        return guard
     result = wbs_service.update_item(item_id, data, updated_by=g.user['name'])
     _publish_change(item['project_id'], 'update', [item_id])
     return jsonify(result)
@@ -92,6 +108,9 @@ def patch_item(item_id):
     data = request.get_json()
     if not data:
         return jsonify({'error': '수정할 데이터가 없습니다.'}), 400
+    guard = _plan_date_guard(item['project_id'], data)
+    if guard:
+        return guard
     result = wbs_service.update_item(item_id, data, updated_by=g.user['name'])
     _publish_change(item['project_id'], 'update', [item_id])
     return jsonify(result)
@@ -129,7 +148,13 @@ def batch_update(project_id):
     data = request.get_json()
     if not data or not isinstance(data.get('items'), list):
         return jsonify({'error': '항목 목록이 필요합니다.'}), 400
-    results = wbs_service.batch_update(project_id, data['items'], updated_by=g.user['name'])
+    items = data['items']
+    # developer는 계획시작/계획완료를 변경할 수 없다 → 일괄수정 페이로드에서 해당 필드 제거
+    if g.project_role not in ('pl', 'pm', 'admin'):
+        for it in items:
+            it.pop('plan_start', None)
+            it.pop('plan_end', None)
+    results = wbs_service.batch_update(project_id, items, updated_by=g.user['name'])
     _publish_change(project_id, 'batch')
     return jsonify(results)
 
@@ -138,7 +163,7 @@ def batch_update(project_id):
 
 @api_wbs_bp.route('/<int:project_id>/items', methods=['DELETE'])
 @api_login_required
-@project_access_required('developer')
+@project_access_required('pm')
 def clear_items(project_id):
     from app.extensions import get_db
     db = get_db()
@@ -204,7 +229,7 @@ def schedule_gaps(project_id):
 
 @api_wbs_bp.route('/<int:project_id>/send-delay-mail', methods=['POST'])
 @api_login_required
-@project_access_required('admin')
+@project_access_required('pm')
 def send_delay_mail(project_id):
     """지연 태스크를 각 담당자에게 이메일로 알림 발송한다."""
     from app.extensions import get_db
@@ -263,7 +288,7 @@ def send_delay_mail(project_id):
 
 @api_wbs_bp.route('/<int:project_id>/send-task-update-mail', methods=['POST'])
 @api_login_required
-@project_access_required('admin')
+@project_access_required('pm')
 def send_task_update_mail(project_id):
     """이번주 할당 태스크 갱신 요청 메일을 즉시 발송한다. (테스트/수동 트리거)"""
     from app.services import notification_service
@@ -297,7 +322,7 @@ def list_history(project_id):
 
 @api_wbs_bp.route('/<int:project_id>/ai', methods=['POST'])
 @api_login_required
-@project_access_required('admin')
+@project_access_required('pl')
 def ai_assistant(project_id):
     data = request.get_json()
     if not data or not data.get('query'):

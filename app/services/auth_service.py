@@ -51,7 +51,11 @@ def get_all_users():
     return [dict(r) for r in rows]
 
 
-VALID_ROLES = ('admin', 'developer', 'viewer')
+# 전역 역할(user.role): 관리자(admin) / 일반 사용자(developer) 2단계.
+# 업무 권한(pm/pl/developer/viewer)은 프로젝트별(project_member.role)로만 지정한다.
+VALID_ROLES = ('admin', 'developer')
+# 프로젝트별 역할(project_member.role): 권한 판정의 실제 출처
+PROJECT_MEMBER_ROLES = ('pm', 'pl', 'developer', 'viewer')
 
 
 def update_user_role(user_id, new_role):
@@ -59,12 +63,10 @@ def update_user_role(user_id, new_role):
         raise ValueError(f"잘못된 역할: {new_role}")
     db = get_db()
     db.execute("UPDATE user SET role = ? WHERE id = ?", (new_role, user_id))
+    # 전역 admin 승격 시 프로젝트 멤버 행 제거(모든 프로젝트에서 admin으로 동작).
+    # 그 외 전역 역할 변경은 프로젝트별 역할(project_member.role)을 건드리지 않는다.
     if new_role == 'admin':
-        # 전역 admin은 모든 프로젝트에서 admin으로 동작 → 멤버 테이블에서 제거
         db.execute("DELETE FROM project_member WHERE user_id = ?", (user_id,))
-    else:
-        # 일반 권한 변경 시 project_member.role 동기화 (불일치 방지)
-        db.execute("UPDATE project_member SET role = ? WHERE user_id = ?", (new_role, user_id))
     db.commit()
 
 
@@ -123,8 +125,8 @@ _ROLE_LEVEL = {'viewer': 0, 'developer': 1, 'admin': 2}
 def get_project_role(user_id, project_id):
     """프로젝트 내 유효 권한을 반환한다.
 
-    권한은 유저 관리(user.role)에서 단일 관리한다. project_member 테이블은
-    "이 프로젝트에 어떤 유저가 속해 있는가"만 표현하고, role은 user.role을 그대로 사용한다.
+    전역 admin이면 항상 'admin'. 그 외에는 해당 프로젝트의 project_member.role
+    (pm/pl/developer/viewer)을 반환한다. 멤버가 아니면 None.
     """
     user = get_user(user_id)
     if not user:
@@ -133,12 +135,12 @@ def get_project_role(user_id, project_id):
         return 'admin'
     db = get_db()
     row = db.execute(
-        "SELECT 1 FROM project_member WHERE project_id = ? AND user_id = ?",
+        "SELECT role FROM project_member WHERE project_id = ? AND user_id = ?",
         (project_id, user_id),
     ).fetchone()
     if not row:
         return None
-    return user['role']
+    return row['role']
 
 
 def get_project_members(project_id):
@@ -155,10 +157,10 @@ def get_project_members(project_id):
 
 
 def set_project_members(project_id, members):
-    """프로젝트 멤버를 갱신한다.
+    """프로젝트 멤버와 프로젝트별 역할을 갱신한다. (admin 전용 경로에서만 호출)
 
-    member의 role은 받지 않으며(권한은 user.role에서 통합 관리), DB의 project_member.role은
-    user.role을 그대로 복제해 둔다(스키마 NOT NULL 제약 충족 + 데이터 일관성 유지).
+    member의 role(pm/pl/developer/viewer)은 멤버 지정 UI(admin 전용)가 보낸 값을 저장한다.
+    전역 admin 유저는 모든 프로젝트에서 admin이므로 멤버로 등록하지 않는다.
     """
     db = get_db()
     db.execute("DELETE FROM project_member WHERE project_id = ?", (project_id,))
@@ -171,9 +173,12 @@ def set_project_members(project_id, members):
         u = db.execute("SELECT role FROM user WHERE id = ?", (uid,)).fetchone()
         if not u or u['role'] == 'admin':
             continue
+        role = m.get('role')
+        if role not in PROJECT_MEMBER_ROLES:
+            role = 'developer'  # 미지정/유효하지 않은 값은 기본 개발자
         db.execute(
             "INSERT INTO project_member (project_id, user_id, role) VALUES (?, ?, ?)",
-            (project_id, uid, u['role']),
+            (project_id, uid, role),
         )
     db.commit()
 

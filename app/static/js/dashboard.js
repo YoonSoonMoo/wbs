@@ -1,5 +1,6 @@
 // ===== Dashboard =====
 var editingProjectId = null;
+var currentEditRole = null;   // 현재 편집 중인 프로젝트에서 내 역할 (admin/pm)
 var availableUsers = [];
 
 async function loadProjects() {
@@ -45,12 +46,14 @@ async function renderProjects(projects) {
         html += '<div class="stat-item"><div class="stat-value">' + stats.avg_progress + '%</div><div class="stat-label">진행률</div></div>';
         html += '</div>';
 
-        if (isAdmin) {
+        var myRole = project.my_role || (isAdmin ? 'admin' : '');
+        var canManage = (myRole === 'admin' || myRole === 'pm');
+        if (canManage) {
             var histOn = !!project.history_enabled;
             var histCls = histOn ? 'btn btn-hist-toggle on' : 'btn btn-hist-toggle';
             var histLabel = histOn ? '이력: ON' : '이력: OFF';
             html += '<div class="project-actions" onclick="event.stopPropagation()">';
-            html += '<button class="btn" onclick="editProject(' + project.id + ')">수정</button>';
+            html += '<button class="btn" onclick="editProject(' + project.id + ', \'' + myRole + '\')">수정</button>';
             html += '<button class="btn" style="color:var(--danger)" onclick="clearProjectData(' + project.id + ', \'' + escapeHtml(project.name).replace(/'/g, "\\'") + '\')">데이터 초기화</button>';
             html += '<button class="btn" style="color:var(--danger)" onclick="deleteProject(' + project.id + ', \'' + escapeHtml(project.name).replace(/'/g, "\\'") + '\')">삭제</button>';
             html += '<button class="' + histCls + '" data-pid="' + project.id + '" onclick="toggleProjectHistory(' + project.id + ', ' + (histOn ? 0 : 1) + ', this)" title="변경 이력 기록 ON/OFF">' + histLabel + '</button>';
@@ -65,6 +68,7 @@ async function renderProjects(projects) {
 // ===== Modal =====
 async function showCreateProjectModal() {
     editingProjectId = null;
+    currentEditRole = 'admin';   // 새 프로젝트는 admin만 생성
     document.getElementById('modal-title').textContent = '새 프로젝트';
     document.getElementById('project-form').reset();
     document.getElementById('project-id').value = '';
@@ -73,10 +77,11 @@ async function showCreateProjectModal() {
     document.getElementById('project-modal').style.display = 'flex';
 }
 
-async function editProject(id) {
+async function editProject(id, myRole) {
     try {
         var project = await API.get('/api/projects/' + id);
         editingProjectId = id;
+        currentEditRole = myRole || 'admin';
         document.getElementById('modal-title').textContent = '프로젝트 수정';
         document.getElementById('project-id').value = id;
         document.getElementById('project-name').value = project.name;
@@ -95,7 +100,7 @@ async function editProject(id) {
         // 기존 멤버 로드
         var members = await API.get('/api/projects/' + id + '/members');
         for (var i = 0; i < members.length; i++) {
-            addMemberRow(members[i].id);
+            addMemberRow(members[i].id, members[i].role);
         }
 
         document.getElementById('project-modal').style.display = 'flex';
@@ -118,13 +123,15 @@ async function handleProjectSubmit(e) {
         end_date: document.getElementById('project-end').value || null,
     };
 
-    if (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'admin') {
+    // 멤버/역할 지정: admin 또는 해당 프로젝트 PM
+    if (currentEditRole === 'admin' || currentEditRole === 'pm') {
         data.members = collectMembers();
-        var notifyEnabled = document.getElementById('project-task-notify-enabled');
-        var notifyTime = document.getElementById('project-task-notify-time');
-        if (notifyEnabled) data.task_notify_enabled = notifyEnabled.checked ? 1 : 0;
-        if (notifyTime) data.task_notify_time = notifyTime.value || '09:00';
     }
+    // 태스크 갱신 알림: admin 전용 (입력 요소가 렌더된 경우에만 전송)
+    var notifyEnabled = document.getElementById('project-task-notify-enabled');
+    var notifyTime = document.getElementById('project-task-notify-time');
+    if (notifyEnabled) data.task_notify_enabled = notifyEnabled.checked ? 1 : 0;
+    if (notifyTime) data.task_notify_time = notifyTime.value || '09:00';
 
     try {
         if (editingProjectId) {
@@ -227,7 +234,9 @@ function clearMemberList() {
     if (list) list.innerHTML = '';
 }
 
-function addMemberRow(selectedUserId) {
+var MEMBER_ROLES = [['pm', 'PM'], ['pl', 'PL'], ['developer', '개발자'], ['viewer', '뷰어']];
+
+function addMemberRow(selectedUserId, selectedRole) {
     var list = document.getElementById('member-list');
     if (!list) return;
 
@@ -249,8 +258,16 @@ function addMemberRow(selectedUserId) {
         userOptions += '<option value="' + u.id + '"' + sel + '>' + escapeHtml(u.name) + ' (' + escapeHtml(u.email) + ')</option>';
     }
 
-    // 권한은 유저 관리(전역 role)에서 통합 관리되므로 멤버 행에서는 user 선택만 받는다.
+    var role = selectedRole || 'developer';
+    var roleOptions = '';
+    for (var r = 0; r < MEMBER_ROLES.length; r++) {
+        var rsel = (MEMBER_ROLES[r][0] === role) ? ' selected' : '';
+        roleOptions += '<option value="' + MEMBER_ROLES[r][0] + '"' + rsel + '>' + MEMBER_ROLES[r][1] + '</option>';
+    }
+
+    // 프로젝트별 역할(PM/PL/개발자/뷰어)을 멤버 행에서 지정 (admin 전용 화면)
     row.innerHTML = '<select class="member-user" style="flex:1;">' + userOptions + '</select>' +
+        '<select class="member-role" style="width:90px;">' + roleOptions + '</select>' +
         '<button type="button" class="btn-remove" onclick="this.parentElement.remove()">&times;</button>';
 
     list.appendChild(row);
@@ -261,8 +278,9 @@ function collectMembers() {
     var members = [];
     for (var i = 0; i < rows.length; i++) {
         var userId = rows[i].querySelector('.member-user');
+        var roleSel = rows[i].querySelector('.member-role');
         if (userId) {
-            members.push({ user_id: parseInt(userId.value) });
+            members.push({ user_id: parseInt(userId.value), role: roleSel ? roleSel.value : 'developer' });
         }
     }
     return members;
@@ -302,10 +320,10 @@ async function loadUserMgmtList() {
         for (var i = 0; i < users.length; i++) {
             var u = users[i];
             var isSelf = (u.id === CURRENT_USER_ID);
-            var roleOpts = ['admin', 'developer', 'viewer'].map(function(r) {
-                var label = r === 'admin' ? '관리자' : r === 'developer' ? '개발자' : '뷰어';
-                return '<option value="' + r + '"' + (u.role === r ? ' selected' : '') + '>' + label + '</option>';
-            }).join('');
+            // 전역 역할은 관리자/일반 2단계 (업무 권한 PM/PL/개발자/뷰어는 프로젝트별로 지정)
+            var isAdminRole = (u.role === 'admin');
+            var roleOpts = '<option value="admin"' + (isAdminRole ? ' selected' : '') + '>관리자</option>'
+                + '<option value="developer"' + (isAdminRole ? '' : ' selected') + '>일반 사용자</option>';
             var activeBadge = u.is_active
                 ? '<span class="user-badge user-badge-active">활성</span>'
                 : '<span class="user-badge user-badge-inactive">비활성</span>';

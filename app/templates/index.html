@@ -92,14 +92,12 @@
                     </div>
                     {% endif %}
 
-                    <!-- 멤버 할당 (admin만 표시) -->
-                    {% if user_role == 'admin' %}
+                    <!-- 멤버 할당 (admin/PM — 모달은 admin/PM만 열림) -->
                     <div class="form-group" id="member-section">
                         <label>프로젝트 멤버</label>
                         <div id="member-list"></div>
                         <button type="button" class="btn" onclick="addMemberRow()" style="margin-top:6px;">+ 멤버 추가</button>
                     </div>
-                    {% endif %}
                 </div>
             </div>
 

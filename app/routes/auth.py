@@ -42,7 +42,7 @@ def register():
             flash('비밀번호는 4자 이상이어야 합니다.', 'error')
         else:
             try:
-                register_user(name, email, password, role='viewer')
+                register_user(name, email, password, role='developer')
                 flash('회원가입이 완료되었습니다. 로그인해주세요.', 'success')
                 return redirect(url_for('auth.login'))
             except ValueError as e:
