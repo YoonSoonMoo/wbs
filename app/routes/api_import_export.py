@@ -1,7 +1,7 @@
-from flask import Blueprint, Response, jsonify, request, send_file
+from flask import Blueprint, Response, g, jsonify, request, send_file
 
 from app.auth import api_login_required, project_access_required
-from app.services import import_export
+from app.services import event_broker, import_export
 from app.services.wbs_code_service import recalculate_codes
 
 api_import_export_bp = Blueprint('api_import_export', __name__)
@@ -43,6 +43,7 @@ def import_csv(project_id):
     content = file.read().decode('utf-8-sig')
     count = import_export.import_csv(project_id, content)
     recalculate_codes(project_id)
+    event_broker.publish(project_id, {'type': 'wbs_changed', 'action': 'import', 'item_ids': [], 'updated_by': g.user['name']})
     return jsonify({'message': f'{count}개 항목을 가져왔습니다.', 'count': count})
 
 
@@ -56,4 +57,5 @@ def import_paste(project_id):
 
     count = import_export.import_paste_data(project_id, data['text'])
     recalculate_codes(project_id)
+    event_broker.publish(project_id, {'type': 'wbs_changed', 'action': 'import', 'item_ids': [], 'updated_by': g.user['name']})
     return jsonify({'message': f'{count}개 항목을 가져왔습니다.', 'count': count})

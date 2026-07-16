@@ -1673,3 +1673,72 @@ function renderHistoryRows() {
     body.innerHTML = h;
     meta.textContent = '총 ' + historyItems.length + '건' + (q ? ' · 필터 ' + rows.length + '건' : '');
 }
+
+// ===== 실시간 갱신 (SSE) =====
+// 다른 사용자가 WBS를 변경하면 서버가 이벤트를 푸시한다.
+// 셀 편집 중일 때는 즉시 덮어쓰지 않고 배너로 알린 뒤, 편집이 끝나면 반영한다.
+var _liveSource = null;
+var _livePendingRefresh = false;
+
+function isGridBusy() {
+    var ae = document.activeElement;
+    if (ae && (ae.isContentEditable || ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT')) return true;
+    if (document.getElementById('expandedEditor')) return true;        // 세부항목/진행상태 팝업
+    if (document.querySelector('.modal.show')) return true;            // 붙여넣기/통계 등 모달
+    return false;
+}
+
+function _liveBanner() {
+    var b = document.getElementById('liveRefreshBanner');
+    if (b) return b;
+    b = document.createElement('div');
+    b.id = 'liveRefreshBanner';
+    b.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2000;'
+        + 'background:var(--accent-blue,#4f6ef7);color:#fff;padding:8px 14px;border-radius:20px;'
+        + 'box-shadow:0 4px 16px rgba(0,0,0,.2);font-size:13px;display:none;align-items:center;gap:10px;cursor:pointer;';
+    b.innerHTML = '<span>다른 사용자가 변경했습니다</span>'
+        + '<button style="background:#fff;color:var(--accent-blue,#4f6ef7);border:none;border-radius:12px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer;">지금 갱신</button>';
+    b.addEventListener('click', applyLiveRefresh);
+    document.body.appendChild(b);
+    return b;
+}
+
+function applyLiveRefresh() {
+    _livePendingRefresh = false;
+    var b = document.getElementById('liveRefreshBanner');
+    if (b) b.style.display = 'none';
+    loadItems();
+}
+
+function onLiveChange() {
+    if (isGridBusy()) {
+        // 편집 중 → 배너만 표시하고 편집 종료 시 반영
+        _livePendingRefresh = true;
+        _liveBanner().style.display = 'flex';
+    } else {
+        applyLiveRefresh();
+    }
+}
+
+// 편집이 끝나면(포커스가 그리드 밖으로) 대기 중인 갱신을 반영
+document.addEventListener('focusout', function() {
+    if (!_livePendingRefresh) return;
+    setTimeout(function() {
+        if (_livePendingRefresh && !isGridBusy()) applyLiveRefresh();
+    }, 200);
+});
+
+function connectLiveUpdates() {
+    if (typeof EventSource === 'undefined' || !PROJECT_ID) return;
+    _liveSource = new EventSource('/api/wbs/' + PROJECT_ID + '/events');
+    _liveSource.onmessage = function(e) {
+        var ev;
+        try { ev = JSON.parse(e.data); } catch (err) { return; }
+        if (ev.type !== 'wbs_changed') return;
+        if (ev.updated_by && ev.updated_by === USER_NAME) return;  // 내 변경은 무시
+        onLiveChange();
+    };
+    // 연결이 끊기면 EventSource가 자동으로 재연결한다.
+}
+
+document.addEventListener('DOMContentLoaded', connectLiveUpdates);

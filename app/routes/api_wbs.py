@@ -1,12 +1,25 @@
-from flask import Blueprint, current_app, g, jsonify, request
+import json
+import queue
+
+from flask import Blueprint, Response, current_app, g, jsonify, request, stream_with_context
 
 from app.auth import api_login_required, project_access_required
 from app.models import change_history, wbs_item as wbs_model
-from app.services import dashboard_service, wbs_service
+from app.services import dashboard_service, event_broker, wbs_service
 from app.services.ai_assistant import process_command as ai_process_command
 from app.services.auth_service import get_project_role
 
 api_wbs_bp = Blueprint('api_wbs', __name__)
+
+
+def _publish_change(project_id, action, item_ids=None):
+    """WBS 변경 사실을 해당 프로젝트 구독자(SSE)에게 알린다."""
+    event_broker.publish(project_id, {
+        'type': 'wbs_changed',
+        'action': action,
+        'item_ids': item_ids or [],
+        'updated_by': g.user['name'],
+    })
 
 
 def _check_item_write(item_id):
@@ -43,6 +56,7 @@ def create_item(project_id):
         return jsonify({'error': '데이터가 없습니다.'}), 400
     data['project_id'] = project_id
     item = wbs_service.create_item(data)
+    _publish_change(project_id, 'create', [item['id']])
     return jsonify(item), 201
 
 
@@ -65,6 +79,7 @@ def update_item(item_id):
     if not data:
         return jsonify({'error': '수정할 데이터가 없습니다.'}), 400
     result = wbs_service.update_item(item_id, data, updated_by=g.user['name'])
+    _publish_change(item['project_id'], 'update', [item_id])
     return jsonify(result)
 
 
@@ -78,6 +93,7 @@ def patch_item(item_id):
     if not data:
         return jsonify({'error': '수정할 데이터가 없습니다.'}), 400
     result = wbs_service.update_item(item_id, data, updated_by=g.user['name'])
+    _publish_change(item['project_id'], 'update', [item_id])
     return jsonify(result)
 
 
@@ -88,6 +104,7 @@ def delete_item(item_id):
     if err[0]:
         return err[0], err[1]
     wbs_service.delete_item(item_id)
+    _publish_change(item['project_id'], 'delete', [item_id])
     return jsonify({'message': '항목이 삭제되었습니다.'})
 
 
@@ -101,6 +118,7 @@ def move_item(item_id):
         return err[0], err[1]
     data = request.get_json()
     result = wbs_service.move_item(item_id, data.get('parent_id'), data.get('sort_order', 0))
+    _publish_change(item['project_id'], 'move', [item_id])
     return jsonify(result)
 
 
@@ -112,6 +130,7 @@ def batch_update(project_id):
     if not data or not isinstance(data.get('items'), list):
         return jsonify({'error': '항목 목록이 필요합니다.'}), 400
     results = wbs_service.batch_update(project_id, data['items'], updated_by=g.user['name'])
+    _publish_change(project_id, 'batch')
     return jsonify(results)
 
 
@@ -125,6 +144,7 @@ def clear_items(project_id):
     db = get_db()
     db.execute("DELETE FROM wbs_item WHERE project_id = ?", (project_id,))
     db.commit()
+    _publish_change(project_id, 'clear')
     return jsonify({'message': '모든 WBS 항목이 초기화되었습니다.'})
 
 
@@ -291,4 +311,43 @@ def ai_assistant(project_id):
     if role == 'viewer' and result.get('action') in ('add', 'delete', 'update', 'move'):
         return jsonify({'success': False, 'message': '읽기 전용 권한으로는 데이터를 변경할 수 없습니다.'}), 403
 
+    if result.get('action') in ('add', 'delete', 'update', 'move'):
+        _publish_change(project_id, result['action'])
+
     return jsonify(result)
+
+
+# --- SSE: 실시간 변경 스트림 ---
+
+@api_wbs_bp.route('/<int:project_id>/events', methods=['GET'])
+@api_login_required
+@project_access_required('viewer')
+def events(project_id):
+    """프로젝트의 WBS 변경을 실시간으로 스트리밍한다 (Server-Sent Events).
+
+    다른 사용자가 항목을 변경하면 구독 중인 클라이언트로 이벤트를 푸시한다.
+    """
+    q = event_broker.subscribe(project_id)
+
+    @stream_with_context
+    def stream():
+        # 인증 단계(project_access_required)에서 열린 DB 커넥션을 즉시 반납한다.
+        # SSE 연결은 장시간 유지되므로 DB 커넥션을 붙잡고 있으면 안 된다.
+        from app.extensions import close_db
+        close_db()
+        try:
+            yield ': connected\n\n'
+            while True:
+                try:
+                    event = q.get(timeout=25)
+                    yield 'data: ' + json.dumps(event) + '\n\n'
+                except queue.Empty:
+                    # 하트비트: 죽은 연결을 감지하고 프록시 타임아웃을 방지한다.
+                    yield ': keep-alive\n\n'
+        finally:
+            event_broker.unsubscribe(project_id, q)
+
+    resp = Response(stream(), mimetype='text/event-stream')
+    resp.headers['Cache-Control'] = 'no-cache'
+    resp.headers['X-Accel-Buffering'] = 'no'  # nginx 등 프록시 버퍼링 방지
+    return resp
