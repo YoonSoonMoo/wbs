@@ -20,7 +20,13 @@
       "WebFetch(domain:daou.co.kr)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:5000/)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} \\(login\\)\\\\n\" http://localhost:5000/login)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(.venv/Scripts/python *)",
+      "Bash(git check-ignore *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(awk 'NR>=1525 && NR<=1620 && /^function |^}/' app/static/js/grid.js)",
+      "Bash(node --check app/static/js/grid.js)"
     ]
   }
 }

@@ -19,3 +19,6 @@ build/
 
 # wbs-report 스킬 실제 설정(토큰 포함) — 커밋 금지, env.sample.json 만 추적
 skills/wbs-report/env.json
+
+# Claude Code 작업용 임시 worktree
+.claude/worktrees/
