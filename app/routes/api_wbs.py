@@ -351,3 +351,22 @@ def events(project_id):
     resp.headers['Cache-Control'] = 'no-cache'
     resp.headers['X-Accel-Buffering'] = 'no'  # nginx 등 프록시 버퍼링 방지
     return resp
+
+
+@api_wbs_bp.route('/<int:project_id>/editing', methods=['POST'])
+@api_login_required
+@project_access_required('developer')
+def cell_editing(project_id):
+    """셀 편집 시작/종료를 다른 사용자에게 실시간 통지한다 (presence).
+
+    DB를 건드리지 않고 브로커로만 전파하는 가벼운 신호이다.
+    """
+    data = request.get_json(silent=True) or {}
+    event_broker.publish(project_id, {
+        'type': 'cell_editing',
+        'item_id': data.get('item_id'),
+        'col': data.get('col'),
+        'editing': bool(data.get('editing')),
+        'user': g.user['name'],
+    })
+    return ('', 204)

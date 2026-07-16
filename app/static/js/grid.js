@@ -139,7 +139,7 @@ function renderGrid() {
             }
         }
         var trClassAttr = trClass.length ? ' class="' + trClass.join(' ') + '"' : '';
-        h += '<tr data-idx="' + row._idx + '"' + trClassAttr + (canEdit ? ' oncontextmenu="showContext(event,' + row._idx + ')"' : '') + '>';
+        h += '<tr data-idx="' + row._idx + '" data-id="' + (row._id || '') + '"' + trClassAttr + (canEdit ? ' oncontextmenu="showContext(event,' + row._idx + ')"' : '') + '>';
         h += '<td class="row-num"' + (canDrag ? ' draggable="true"' : '') + ' onclick="handleRowSelect(event,' + row._idx + ')">' + (row._idx + 1) + '</td>';
         h += '<td class="' + editClass + '"' + ceAttr + ' data-col="category">' + esc(row.category) + '</td>';
         h += '<td class="' + editClass + '"' + ceAttr + ' data-col="task_name">' + esc(row.task_name) + '</td>';
@@ -156,6 +156,7 @@ function renderGrid() {
         h += '</tr>';
     }
     tbody.innerHTML = h;
+    if (typeof applyRemotePresence === 'function') applyRemotePresence();
     updateStats(filtered);
     updateAlerts();
     updateSelectionUI();
@@ -1734,6 +1735,11 @@ function connectLiveUpdates() {
     _liveSource.onmessage = function(e) {
         var ev;
         try { ev = JSON.parse(e.data); } catch (err) { return; }
+        if (ev.type === 'cell_editing') {
+            if (ev.user && ev.user === USER_NAME) return;  // 내 편집 신호는 무시
+            onRemoteEditing(ev);
+            return;
+        }
         if (ev.type !== 'wbs_changed') return;
         if (ev.updated_by && ev.updated_by === USER_NAME) return;  // 내 변경은 무시
         onLiveChange();
@@ -1742,3 +1748,107 @@ function connectLiveUpdates() {
 }
 
 document.addEventListener('DOMContentLoaded', connectLiveUpdates);
+
+// ===== 셀 편집 중 표시 (presence) =====
+// 내가 셀을 편집하기 시작/종료하면 서버로 신호를 보내고,
+// 다른 사용자가 편집 중인 셀은 외곽선 + 이름 배지로 표시한다.
+var remoteEditing = {};          // "itemId|col" -> { user, color, expireAt }
+var REMOTE_EDIT_TTL = 15000;     // 편집자 크래시/탭 종료 대비 만료(ms)
+var _myEditKey = null;
+var _editHeartbeat = null;
+
+function _editorColor(name) {
+    var palette = ['#4f6ef7', '#e6a817', '#18a058', '#e84040', '#8b5cf6', '#0ea5e9', '#ec4899', '#f07c3e'];
+    var h = 0;
+    for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    return palette[h % palette.length];
+}
+
+function sendEditing(itemId, col, editing) {
+    if (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'viewer') return;
+    if (!itemId) return;
+    try {
+        fetch('/api/wbs/' + PROJECT_ID + '/editing', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: itemId, col: col, editing: editing }),
+            keepalive: true
+        }).catch(function () {});
+    } catch (e) {}
+}
+
+function onRemoteEditing(ev) {
+    if (!ev.item_id || !ev.col) return;
+    var key = ev.item_id + '|' + ev.col;
+    if (ev.editing) {
+        remoteEditing[key] = { user: ev.user || '', color: _editorColor(ev.user || ''), expireAt: Date.now() + REMOTE_EDIT_TTL };
+    } else {
+        delete remoteEditing[key];
+    }
+    applyRemotePresence();
+}
+
+function applyRemotePresence() {
+    // 기존 표시 제거
+    var marked = document.querySelectorAll('#wbsBody td.remote-editing');
+    for (var i = 0; i < marked.length; i++) {
+        marked[i].classList.remove('remote-editing');
+        marked[i].removeAttribute('data-editor');
+        marked[i].style.removeProperty('--editor-color');
+    }
+    var now = Date.now();
+    for (var key in remoteEditing) {
+        var info = remoteEditing[key];
+        if (info.expireAt <= now) { delete remoteEditing[key]; continue; }
+        var sep = key.indexOf('|');
+        var itemId = key.substring(0, sep), col = key.substring(sep + 1);
+        var td = document.querySelector('#wbsBody tr[data-id="' + itemId + '"] td[data-col="' + col + '"]');
+        if (!td) continue;
+        td.classList.add('remote-editing');
+        td.setAttribute('data-editor', info.user);
+        td.style.setProperty('--editor-color', info.color);
+    }
+}
+
+// 만료된 표시 정리
+setInterval(function () {
+    var now = Date.now(), changed = false;
+    for (var key in remoteEditing) {
+        if (remoteEditing[key].expireAt <= now) { delete remoteEditing[key]; changed = true; }
+    }
+    if (changed) applyRemotePresence();
+}, 5000);
+
+// 인라인 편집 셀에 포커스 진입/이탈 시 신호 전송
+document.addEventListener('focusin', function (e) {
+    var td = e.target && e.target.closest ? e.target.closest('td.editable') : null;
+    if (!td) return;
+    var tr = td.closest('tr'); if (!tr) return;
+    var itemId = tr.getAttribute('data-id'), col = td.getAttribute('data-col');
+    if (!itemId) return;
+    _myEditKey = { itemId: itemId, col: col };
+    sendEditing(itemId, col, true);
+    if (_editHeartbeat) clearInterval(_editHeartbeat);
+    // 편집이 길어져도 만료되지 않도록 주기적 갱신
+    _editHeartbeat = setInterval(function () {
+        if (_myEditKey) sendEditing(_myEditKey.itemId, _myEditKey.col, true);
+    }, 6000);
+});
+
+document.addEventListener('focusout', function (e) {
+    var td = e.target && e.target.closest ? e.target.closest('td.editable') : null;
+    if (!td) return;
+    var tr = td.closest('tr'); if (!tr) return;
+    var itemId = tr.getAttribute('data-id'), col = td.getAttribute('data-col');
+    if (itemId) sendEditing(itemId, col, false);
+    _myEditKey = null;
+    if (_editHeartbeat) { clearInterval(_editHeartbeat); _editHeartbeat = null; }
+});
+
+// 탭/창을 닫을 때 편집 중 표시를 확실히 해제
+window.addEventListener('pagehide', function () {
+    if (_myEditKey && navigator.sendBeacon) {
+        var body = JSON.stringify({ item_id: _myEditKey.itemId, col: _myEditKey.col, editing: false });
+        navigator.sendBeacon('/api/wbs/' + PROJECT_ID + '/editing', new Blob([body], { type: 'application/json' }));
+    }
+});

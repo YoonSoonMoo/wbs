@@ -429,3 +429,28 @@ body.is-dragging *{cursor:grabbing !important;}
 }
 
 body.tour-active { overflow: hidden; }
+
+/* ===== 다른 사용자가 편집 중인 셀 표시 (presence) ===== */
+#wbsBody td.remote-editing {
+    position: relative;         /* 배지 위치 기준(단, z-index는 주지 않아 배지가 헤더 위로 뜨게 함) */
+    overflow: visible;          /* 기본 td의 overflow:hidden 이 배지를 자르는 것 방지 */
+    outline: 2px solid var(--editor-color, #e6a817);
+    outline-offset: -2px;
+}
+#wbsBody td.remote-editing::after {
+    content: attr(data-editor);
+    position: absolute;
+    top: -22px;
+    left: -2px;
+    background: var(--editor-color, #e6a817);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.5;
+    padding: 3px 8px;
+    border-radius: 4px 4px 4px 0;
+    white-space: nowrap;
+    z-index: 50;
+    pointer-events: none;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+}
