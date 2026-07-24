@@ -68,6 +68,58 @@ def export_excel(project_id):
     return output
 
 
+# 붙여넣기 열 순서 (WBS코드 제외, 그리드 COLUMNS와 동일)
+PASTE_COLUMNS = [
+    'category', 'task_name', 'subtask', 'detail', 'assignee',
+    'plan_start', 'plan_end', 'actual_start', 'actual_end',
+    'effort', 'progress', 'status',
+]
+
+PASTE_HEADERS = [
+    '구분', 'Task', '서브태스크', '세부항목', '담당자',
+    '계획시작', '계획완료', '실제시작', '실제종료',
+    '공수', '진행률', '진행상태',
+]
+
+SAMPLE_ROWS = [
+    ['기획', '요구사항 분석', '이해관계자 인터뷰', '주요 이해관계자 인터뷰 및 요구사항 정리',
+     '홍길동', '2026-04-06', '2026-04-10', '2026-04-06', '2026-04-09', 3, 100, '완료'],
+    ['개발', '로그인 기능', 'API 구현', 'JWT 기반 인증 API 구현',
+     '김철수', '2026-04-13', '2026-04-20', '2026-04-13', '', 5, 40, '진행중'],
+]
+
+
+def build_sample_excel():
+    """붙여넣기용 샘플 Excel(헤더 + 예시 2행)을 생성한다."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'WBS'
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='2B579A', end_color='2B579A', fill_type='solid')
+
+    for col_idx, header in enumerate(PASTE_HEADERS, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center')
+
+    for row_idx, sample in enumerate(SAMPLE_ROWS, 2):
+        for col_idx, value in enumerate(sample, 1):
+            ws.cell(row=row_idx, column=col_idx, value=value)
+
+    for col_idx, header in enumerate(PASTE_HEADERS, 1):
+        ws.column_dimensions[chr(64 + col_idx)].width = max(len(header) * 2, 12)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
 def import_csv(project_id, file_content):
     """CSV 파일 내용을 파싱하여 WBS 항목으로 가져온다."""
     reader = csv.DictReader(io.StringIO(file_content))

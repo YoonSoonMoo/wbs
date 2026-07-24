@@ -32,6 +32,18 @@ def export_excel(project_id):
     )
 
 
+@api_import_export_bp.route('/sample/excel', methods=['GET'])
+@api_login_required
+def sample_excel():
+    excel_data = import_export.build_sample_excel()
+    return send_file(
+        excel_data,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name='샘플.xlsx',
+    )
+
+
 @api_import_export_bp.route('/<int:project_id>/import/csv', methods=['POST'])
 @api_login_required
 @project_access_required('developer')

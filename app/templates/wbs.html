@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WBS 관리 | Easy WBS | for Claude (via MCP)</title>
+  <title>WBS 관리 | Easy WBS | via AI Agent</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo2.png') }}">
   <link
     href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
@@ -224,6 +224,7 @@
       <h3>📋 Excel 데이터 붙여넣기</h3>
       <p class="modal-desc">Excel에서 복사한 데이터를 아래에 붙여넣으세요. 탭으로 구분된 데이터를 자동 인식합니다.<br><strong>열 순서:</strong> 구분 → Task →
         서브태스크 → 세부항목 → 담당자 → 계획시작 → 계획완료 → 실제시작 → 실제종료 → 공수 → 진행률 → 진행상태</p>
+      <p class="modal-desc">처음이신가요? <a href="{{ url_for('api_import_export.sample_excel') }}">샘플.xlsx 다운로드</a> 후 형식에 맞춰 작성해 붙여넣으세요.</p>
       <textarea id="pasteArea" placeholder="여기에 Ctrl+V로 붙여넣기..."></textarea>
       <div class="modal-actions">
         <button class="btn" onclick="closePasteModal()">취소</button>
