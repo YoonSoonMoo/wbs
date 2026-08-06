@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | origin: https://github.com/YoonSoonMoo/wbs.git · gitea(미러): https://gitea.daou.co.kr/yoonsm/wbs.git |
-| 기간 | 2026-04-10 최초 구축 ~ 2026-07-16 최신. 상세 변경 이력은 **§8 변경 이력** 참조 |
+| 기간 | 2026-04-10 최초 구축 ~ 2026-08-06 최신. 상세 변경 이력은 **§8 변경 이력** 참조 |
 
 ## 2. 기술 스택
 
@@ -72,11 +72,11 @@ wbs/
 │       ├── landing.html         # 랜딩 페이지 (비로그인 /, 기능 소개 + AI 쇼케이스)
 │       ├── login.html / register.html # 인증 페이지 (Easy WBS 브랜드)
 │       ├── index.html           # 대시보드 페이지 (/dashboard)
-│       ├── wbs.html             # WBS 그리드 뷰 (독립 페이지, 역할별 UI 게이팅)
+│       ├── wbs.html             # WBS 그리드 뷰 (독립 페이지, 상단바 메뉴, 역할별 UI 게이팅)
 │       └── gantt.html           # Gantt 차트 뷰 (viewer 접근 차단)
-├── migrations/                  # NNN_*.sql 버전드 마이그레이션 (001~014, §4 참조)
+├── migrations/                  # NNN_*.sql 버전드 마이그레이션 (001~016, §4 참조)
 ├── instance/                    # SQLite DB 파일 (자동 생성, gitignore)
-├── tests/                       # pytest API 테스트 스위트 (conftest + 9개 파일, 77건)
+├── tests/                       # pytest API 테스트 스위트 (conftest + 10개 파일, 110건)
 ├── skills/wbs-report/           # Claude CLI 연동 스킬 (env.json은 토큰 포함 gitignore)
 ├── template/wbs-manage.html     # UI 레퍼런스 원본 (단독 HTML, localStorage 기반, 실사용 안 함)
 ├── run.py                       # 실행 진입점
@@ -219,6 +219,7 @@ wbs/
 | Method | URL | 설명 |
 |--------|-----|------|
 | GET | `/api/io/<pid>/export/csv` · `/export/excel` | CSV(UTF-8 BOM) / Excel(.xlsx) 다운로드 |
+| GET | `/api/io/sample/excel` | 붙여넣기용 샘플 `샘플.xlsx` 다운로드 (헤더 + 예시 2행, 프로젝트 무관·로그인만 필요) |
 | POST | `/api/io/<pid>/import/csv` · `/import/paste` | CSV 업로드 / 탭 구분 텍스트 가져오기 |
 
 ## 6. 핵심 설계 결정
@@ -274,6 +275,7 @@ wbs/
 
 ### 프론트엔드: template/wbs-manage.html 기반
 - WBS 그리드는 `wbs.html`(독립 페이지, `wbs.css`). 대시보드(`index.html`)만 `base.html` 상속
+- **상단바 구성**: 좌측 제목(프로젝트명 + `Work Breakdown Structure` + 버전 + 가이드 `?` 원형 버튼) / 우측 기능 버튼(대시보드 · Gantt · 통계 · 이력) + **데이터관리 드롭다운**(CSV·Excel 내보내기 / Excel 붙여넣기 · 샘플.xlsx 다운로드) + 구분선 오른쪽 **사용자 영역**(유저명·역할, 로그아웃). 아이콘은 이모지 대신 **인라인 SVG**(`currentColor` stroke, `.btn-top svg`). 드롭다운 토글은 `wbs.html` 인라인 스크립트 `toggleTopMenu()`(바깥 클릭 시 닫힘)
 - 일반 셀 `contenteditable` 인라인 편집(300ms debounce → PATCH 자동저장, 앞뒤 trim). 세부항목/진행상태는 더블클릭 팝업(개행 지원). 날짜 컬럼 자동 변환(다양한 형식 → yyyy-MM-dd, 그리드는 yy-MM-dd 축약 표시)
 - 행번호(#) = DB 고유 ID. 복수 선택(클릭/Shift/Ctrl/# 전체) → 일괄 삭제. 우클릭 컨텍스트 메뉴(삽입/복제/삭제/행이동 TID). Excel 붙여넣기(멀티셀 자동감지)
 - 필터: 빠른검색(2입력 AND) · 완료 포함 · 나만의 · 이번주 · 지연 · 계획시작 우선 (체크 상태·컬럼폭 localStorage 프로젝트별 유지)
@@ -292,6 +294,8 @@ python run.py                     # http://localhost:5000
 
 > 각 항목의 현재 동작 상세는 §6, 스키마는 §4 참조. 아래는 "언제 무엇을 했는가" 요약.
 
+- **2026-08-06** — **그리드 상단바 메뉴 정리**: CSV/Excel 내보내기·Excel 붙여넣기·샘플 다운로드를 '데이터관리' 드롭다운으로 묶고, 유저명·로그아웃을 구분선 오른쪽 그룹으로 분리, 가이드를 제목 옆 원형 `?` 버튼으로 이동(상단 버튼 10개→6개). 이모지 아이콘 → 인라인 SVG 라인 아이콘 교체(아이콘 중복 제거 + 다크 배경 가독성). 워크쓰루 1단계 설명 갱신
+- **2026-07-24** — 붙여넣기용 **샘플 Excel 다운로드**(`GET /api/io/sample/excel`, 헤더 + 예시 2행 생성). 브랜딩 문구 `for Claude (via MCP)` → `via AI Agent`(전 템플릿 title·로고 크레딧), 랜딩 날짜 자동변환 설명 문구 수정
 - **2026-07-16** — **전역 역할 2단계 정리**: `user.role`을 관리자/일반(admin/developer)으로 축소(016 마이그레이션, 전역 viewer→developer 통일). 업무 권한은 프로젝트별로 일원화 — 유저 관리 화면은 관리자/일반만, PM/PL/개발자/뷰어는 프로젝트 수정 화면에서 지정. 랜딩 권한 체계 소개도 5개 카드로 갱신
 - **2026-07-16** — **권한 5단계 확장**: admin > PM > PL > developer > viewer. PM/PL은 프로젝트별 역할(`project_member.role`이 판정 출처로 복귀, 2026-04-30 단일관리 되돌림, 015 마이그레이션). PM=프로젝트 전권(전역 admin 기능 유저관리·백업·새프로젝트 제외), PL=개발자+AI+계획일자 수정, developer=계획시작/완료 수정 불가(프론트 잠금+얼럿, 백엔드 403). 멤버 추가·삭제 및 역할 지정은 프로젝트 수정 화면에서 admin/PM(멤버 관리 전권). API 게이팅(프로젝트 수정/삭제/초기화/이력·메일=pm, AI=pl) + 프론트 게이팅 + 테스트 23건 추가
 - **2026-07-16** — **SSE 실시간 협업**: 그리드 실시간 자동 갱신(EventSource, 본인 변경 무시, 편집 중 클로버링 방지 배너) + 셀 편집 presence(편집자 외곽선·이름 배지) + 인메모리 이벤트 브로커. 랜딩 기능카드 'AI 어시스턴트'→'실시간 협업'으로 교체(하단 AI 상세 섹션과 중복 제거). 태그 `v1.0.0`(베이스라인)/`v1.1.0`(SSE 갱신)/`v1.2.0`(presence+랜딩) 부여, origin·gitea 푸시
