@@ -29,6 +29,23 @@ body{font-family:var(--font-sans);font-size:var(--font-size);background:var(--bg
 .btn:hover{background:var(--bg-tertiary);color:var(--text-primary);}
 .btn-top{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#e2e8f0;}
 .btn-top:hover{background:rgba(255,255,255,.22);color:#fff;}
+/* 상단바 아이콘 (인라인 SVG, 이모지 대체) */
+.btn-top svg,.top-menu-item svg{width:14px;height:14px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+.top-menu-item svg{opacity:.65;}
+/* 제목 옆 가이드(?) 버튼 */
+.btn-help{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:7px;padding:0;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#cbd5e1;font-size:11px;font-weight:700;font-family:var(--font-sans);line-height:1;cursor:pointer;vertical-align:middle;transition:all .15s;}
+.btn-help:hover{background:var(--accent-blue);border-color:var(--accent-blue);color:#fff;}
+/* 상단바 드롭다운 메뉴 */
+.top-menu{position:relative;}
+.menu-caret{font-size:9px;opacity:.8;}
+.top-menu-panel{display:none;position:absolute;top:calc(100% + 6px);right:0;min-width:172px;background:#fff;border:1px solid var(--border-color);border-radius:8px;padding:4px;box-shadow:0 8px 30px rgba(0,0,0,.18);z-index:500;}
+.top-menu.open .top-menu-panel{display:block;}
+.top-menu-item{display:flex;align-items:center;gap:6px;width:100%;padding:7px 12px;border:0;border-radius:5px;background:none;color:var(--text-secondary);font-size:12px;font-family:var(--font-sans);text-align:left;text-decoration:none;white-space:nowrap;cursor:pointer;}
+.top-menu-item:hover{background:var(--bg-row-hover);color:var(--text-primary);}
+.top-menu-sep{height:1px;background:var(--border-light);margin:3px 0;}
+/* 사용자 영역 구분 */
+.top-bar-divider{width:1px;height:18px;margin:0 5px;background:rgba(255,255,255,.22);flex-shrink:0;}
+.top-user{font-size:11px;font-weight:500;color:#cbd5e1;white-space:nowrap;}
 .btn-primary{background:var(--accent-blue);color:#fff;border-color:var(--accent-blue);}
 .btn-primary:hover{background:#1d4ed8;}
 .btn-danger{border-color:var(--accent-red);color:var(--accent-red);}
