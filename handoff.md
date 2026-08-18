@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | origin: https://github.com/YoonSoonMoo/wbs.git · gitea(미러): https://gitea.daou.co.kr/yoonsm/wbs.git |
-| 기간 | 2026-04-10 최초 구축 ~ 2026-08-06 최신. 상세 변경 이력은 **§8 변경 이력** 참조 |
+| 기간 | 2026-04-10 최초 구축 ~ 2026-08-07 최신. 상세 변경 이력은 **§8 변경 이력** 참조 |
 
 ## 2. 기술 스택
 
@@ -19,6 +19,7 @@
 | Frontend | Jinja2 + Vanilla JS | | 서버 렌더링 + AJAX 하이브리드 |
 | Font | Noto Sans KR + JetBrains Mono | | Google Fonts CDN |
 | Excel | openpyxl | 3.1.5 | Excel Import/Export |
+| LLM SDK | openai / anthropic | 1.59.6 / 0.120.2 | AI 어시스턴트 (GEMINI / CLAUDE 프로바이더) |
 | Gantt | Frappe Gantt | 0.6.1 | 로컬 번들 (한국어 로케일 패치) |
 | Chart | Chart.js | 4.4.1 | CDN, 통계 모달 차트 (도넛, 라인) |
 | 환경변수 | python-dotenv | 1.1.0 | |
@@ -76,7 +77,7 @@ wbs/
 │       └── gantt.html           # Gantt 차트 뷰 (viewer 접근 차단)
 ├── migrations/                  # NNN_*.sql 버전드 마이그레이션 (001~016, §4 참조)
 ├── instance/                    # SQLite DB 파일 (자동 생성, gitignore)
-├── tests/                       # pytest API 테스트 스위트 (conftest + 10개 파일, 110건)
+├── tests/                       # pytest API 테스트 스위트 (conftest + 10개 파일, 121건)
 ├── skills/wbs-report/           # Claude CLI 연동 스킬 (env.json은 토큰 포함 gitignore)
 ├── template/wbs-manage.html     # UI 레퍼런스 원본 (단독 HTML, localStorage 기반, 실사용 안 함)
 ├── run.py                       # 실행 진입점
@@ -200,7 +201,7 @@ wbs/
 | GET | `/api/wbs/<pid>/stats` · `/delayed` · `/dashboard` · `/schedule-gaps` | 통계 / 지연목록 / 종합 / 계획vs실제 갭 |
 | GET | `/api/wbs/<pid>/weekly-stats` | 주간 진척 통계 (?weeks=4) |
 | POST | `/api/wbs/<pid>/send-delay-mail` · `/send-task-update-mail` | 지연/갱신요청 메일 발송 (admin) |
-| POST | `/api/wbs/<pid>/ai` | AI 어시스턴트 자연어 질의 (조회/추가/삭제/수정/이동, admin) |
+| POST | `/api/wbs/<pid>/ai` | AI 어시스턴트 자연어 질의 (조회/추가/**마일스톤 기반 생성**/삭제/수정/이동, pl 이상) |
 | GET | `/api/wbs/<pid>/history` | 변경 이력 조회 (developer 이상, `?limit&offset`) |
 | **GET** | **`/api/wbs/<pid>/events`** | **SSE 실시간 변경 스트림 (viewer 이상 구독)** |
 | **POST** | **`/api/wbs/<pid>/editing`** | **셀 편집 presence 신호 (developer 이상, body `{item_id, col, editing}`)** |
@@ -256,14 +257,19 @@ wbs/
 - **그리드 자동 갱신** (`grid.js`): `EventSource`로 구독. **본인 변경은 무시**(updated_by === USER_NAME). 셀 편집 중이면 즉시 덮어쓰지 않고 "지금 갱신" 배너 표시 후 편집 종료 시 반영(클로버링 방지)
 - **셀 편집 presence**: `POST /editing`(DB 무접근, 브로커로만 전파)로 편집 시작/종료 신호. 다른 사용자가 편집 중인 셀에 **편집자별 색상 외곽선 + 이름 배지** 표시. 6초 하트비트 / 15초 만료 / `pagehide` sendBeacon으로 표시 잔류 방지. `<tr>`에 `data-id`로 재렌더 후에도 복원. 인라인 편집 셀 대상(세부항목/진행상태 팝업·진행률 입력은 제외)
 
-### AI 어시스턴트: 멀티 프로바이더 LLM (GEMINI / GEMMA / LOCAL)
-- `_call_llm()`이 `.env`의 `AI_MODEL`에 따라 분기:
-    - **GEMINI/GEMMA** → OpenAI 호환 엔드포인트 (`openai` SDK, `AI_BASE_URL`+`/v1`·`AI_API_KEY`·`AI_MODEL_NAME`, temperature=0). GEMINI는 BASE_URL 미설정 시 Google 호환 엔드포인트 기본. import는 지연 로딩(LOCAL 전용 환경 무방)
-    - **LOCAL** → `claude -p --max-turns 1` subprocess 동기 호출 (timeout 120초)
-- **GEMMA 전용 대응**(작은 컨텍스트 llama.cpp): 전체 행 대신 `_get_compact_summary()`로 축약(집계 헤더 + 지연/이번주~다음주 섹션, 완료 제외, 핵심 6필드, 섹션 상한). query 필터는 LLM 생성·실제 조회는 전체 데이터로 수행. 운영 전제: llama.cpp `--ctx-size 8192` + 코드 `max_tokens=2048`(추론 모델 `<think>` 토큰 여유), `extra_body={"id_slot":2}` 전달(GEMMA만)
-- `process_command()`이 진입점 → `_execute_query/add/delete/update/move()` 선택 실행. 조회는 `ids`+`display` 반환해 그리드 필터 표시
+### AI 어시스턴트: 멀티 프로바이더 LLM (GEMINI / CLAUDE / LOCAL)
+- `_call_llm()`이 `.env`의 `AI_MODEL`에 따라 분기 (SDK import는 모두 지연 로딩 — 미사용 프로바이더 환경 무방):
+    - **GEMINI** → OpenAI 호환 엔드포인트 (`openai` SDK, `AI_BASE_URL`+`/v1`·`AI_API_KEY`·`AI_MODEL_NAME`, temperature=0, max_tokens=2048). BASE_URL 미설정 시 Google 호환 엔드포인트 기본
+    - **CLAUDE** → Anthropic Messages API (`anthropic` SDK, `AI_API_KEY`·`AI_MODEL_NAME`(미설정 시 `claude-opus-5`), max_tokens=16000)
+    - **LOCAL** → `claude -p --max-turns 1` subprocess 동기 호출 (timeout 120초). **API 키 불필요** — 서버 머신에 로그인된 Claude CLI 구독을 사용하므로 호출당 API 과금이 없다. 실측 응답 8~35초(질의 복잡도에 비례)
+- **CLAUDE 경로 주의점**: Claude 4.7 이후 모델은 **`temperature`/`top_p` 미지원(400)** → 추론 깊이는 `output_config={"effort": "medium"}`로 조절. thinking이 기본 ON이며 `max_tokens`를 함께 소비하므로 여유를 크게(16000) 둔다. `stop_reason == 'refusal'`이면 `content`를 읽지 않고 오류로 변환(안전 분류기 거부 시 빈 배열이라 인덱싱하면 크래시)
+- `process_command()`이 진입점 → `_execute_query/add/generate/delete/update/move()` 선택 실행. 조회는 `ids`+`display` 반환해 그리드 필터 표시
+- **분석 대상 축소(입력 토큰 억제)**: `_get_items_summary()`가 전체 행을 나열하지 않고 **①완료(진행률 100) 제외 ②계획기간이 오늘~4주(`_ANALYSIS_WINDOW_DAYS=28`) 창을 벗어난 미래 항목 제외**. 단 **기한 경과 미완료(지연)는 창 밖이어도 포함**(분석의 핵심). 전체 건수·완료 수는 헤더 집계로 남겨 맥락 유지, 프롬프트에 "목록은 전체가 아니다"를 명시해 LLM이 "없다"고 단정하지 않게 함. query 필터는 `_execute_query`가 전체 데이터로 실행하므로 **조회 정확도는 불변**
+    - 실측 절감: 345건(완료 139) 프로젝트 35.6K자→14.2K자(**61%**). 단 **지연 항목이 많으면 절감폭이 작다**(173건·완료 18건 프로젝트는 10%) — 지연은 제외 대상이 아니기 때문
+- **generate 액션**(마일스톤 기반 태스크 일괄 생성): 프로젝트 `description`의 마일스톤을 근거로 여러 건 생성. 기존 Task가 있으면 `구분`/`Task`/`서브태스크`를 **그대로 복사**하고 새 `세부항목`만 작성. 담당자 `AI생성`·공수 `2`·진행률 `0`은 **서버 고정**(LLM 값 무시). 일정은 마일스톤 시기("8월 3주")를 LLM이 날짜로 환산하고, 시기 언급이 없으면 서버가 오늘 기준 영업일로 채움(`_next_business_day`/`_add_business_days`로 토·일 배제). 한 번에 최대 30건
+    - **LLM 오류 방어 2중**: ①프롬프트에 기존 Task 재사용 few-shot 예시 + "category에 마일스톤명 금지" 명시 ②서버가 `task_name`/`detail` 빈 항목과 (구분·Task·서브태스크·세부항목) 완전 중복 항목을 스킵(`skipped` 카운트로 반환). 실제로 LOCAL 모델이 category 자리에 마일스톤명을 넣고 task_name을 비우는 실수를 반복해 추가한 장치
 - **move 액션**: TID(행번호) 기준 순서 이동(`source_row/target_row/position`). parent_id 불변. viewer 403
-- **동시성 제약**: LOCAL(CLI subprocess)만 순차 처리(120초×N 대기 가능). GEMINI/GEMMA(HTTP)는 해당 없음. `app.run(threaded=True)`로 단기 완화
+- **동시성 제약**: LOCAL(CLI subprocess)만 순차 처리(120초×N 대기 가능). GEMINI/CLAUDE(HTTP)는 해당 없음. `app.run(threaded=True)`로 단기 완화
 
 ### 태스크 갱신 알림 자동 메일 (APScheduler)
 - **목적**: 프로젝트별 지정 시각에 담당자에게 이번주 할당 태스크를 메일로 보내 일정·진행률 갱신 유도
@@ -294,6 +300,8 @@ python run.py                     # http://localhost:5000
 
 > 각 항목의 현재 동작 상세는 §6, 스키마는 §4 참조. 아래는 "언제 무엇을 했는가" 요약.
 
+- **2026-08-07** — **AI 분석 범위 축소 + 태스크 생성 기능**: ①분석용 요약을 미완료 + (지연 or 향후 4주) 항목으로 제한해 입력 토큰 절감(345건 프로젝트 61%). ②**generate 액션** 신설 — 프로젝트 마일스톤 기준 태스크 일괄 생성(담당자 `AI생성`/공수 2 서버 고정, 마일스톤 시기→영업일 일정 환산, 기존 구분·Task 체계 재사용, 중복·빈 항목 서버 스킵). 프론트 그리드 자동 갱신 + 생성 건수 안내, AI 바 placeholder 문구 갱신. 테스트 112→121건
+- **2026-08-07** — **AI 프로바이더 정리(GEMINI + Claude API)**: Anthropic Messages API 프로바이더 추가(`AI_MODEL=CLAUDE`, `anthropic` SDK, 기본 모델 `claude-opus-5`, `effort=medium`, refusal 처리). 사내 GEMMA(llama.cpp) 경로 및 전용 대응 코드 삭제 — 압축 요약(`_get_compact_summary`)·축약 프롬프트(`_build_compact_system_prompt`)·`id_slot` 전달 제거로 프롬프트 경로 단일화. Claude CLI(LOCAL)는 유지. 테스트 110→112건
 - **2026-08-06** — **그리드 상단바 메뉴 정리**: CSV/Excel 내보내기·Excel 붙여넣기·샘플 다운로드를 '데이터관리' 드롭다운으로 묶고, 유저명·로그아웃을 구분선 오른쪽 그룹으로 분리, 가이드를 제목 옆 원형 `?` 버튼으로 이동(상단 버튼 10개→6개). 이모지 아이콘 → 인라인 SVG 라인 아이콘 교체(아이콘 중복 제거 + 다크 배경 가독성). 워크쓰루 1단계 설명 갱신
 - **2026-07-24** — 붙여넣기용 **샘플 Excel 다운로드**(`GET /api/io/sample/excel`, 헤더 + 예시 2행 생성). 브랜딩 문구 `for Claude (via MCP)` → `via AI Agent`(전 템플릿 title·로고 크레딧), 랜딩 날짜 자동변환 설명 문구 수정
 - **2026-07-16** — **전역 역할 2단계 정리**: `user.role`을 관리자/일반(admin/developer)으로 축소(016 마이그레이션, 전역 viewer→developer 통일). 업무 권한은 프로젝트별로 일원화 — 유저 관리 화면은 관리자/일반만, PM/PL/개발자/뷰어는 프로젝트 수정 화면에서 지정. 랜딩 권한 체계 소개도 5개 카드로 갱신

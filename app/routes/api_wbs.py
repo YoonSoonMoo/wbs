@@ -333,10 +333,10 @@ def ai_assistant(project_id):
 
     # viewer는 조회만 가능
     result = ai_process_command(project_id, user_query)
-    if role == 'viewer' and result.get('action') in ('add', 'delete', 'update', 'move'):
+    if role == 'viewer' and result.get('action') in ('add', 'generate', 'delete', 'update', 'move'):
         return jsonify({'success': False, 'message': '읽기 전용 권한으로는 데이터를 변경할 수 없습니다.'}), 403
 
-    if result.get('action') in ('add', 'delete', 'update', 'move'):
+    if result.get('action') in ('add', 'generate', 'delete', 'update', 'move'):
         _publish_change(project_id, result['action'])
 
     return jsonify(result)

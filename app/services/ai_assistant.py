@@ -1,4 +1,4 @@
-"""WBS AI Assistant — Claude CLI를 활용한 자연어 명령 처리
+"""WBS AI Assistant — LLM을 활용한 자연어 명령 처리
 
 자연어 입력을 파싱하여 WBS 데이터 조회/추가/삭제 명령으로 변환하고 실행한다.
 template/claude_query_parser.py의 패턴을 참고하여 구현.
@@ -7,7 +7,6 @@ import json
 import logging
 import subprocess
 import sys
-from collections import Counter
 from datetime import date, datetime, timedelta
 
 from flask import current_app
@@ -25,36 +24,40 @@ _is_windows = sys.platform == "win32"
 # GEMINI(AI_MODEL=GEMINI)에서 AI_BASE_URL 미설정 시 사용하는 OpenAI 호환 기본 엔드포인트
 _GEMINI_DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
-# 사내 GEMMA(llama.cpp) 슬롯 할당: 0=기술지원, 1=AI 모니터링, 2=WBS(고정)
-_GEMMA_ID_SLOT = 2
+# CLAUDE(AI_MODEL=CLAUDE)에서 AI_MODEL_NAME 미설정 시 사용할 기본 모델
+_CLAUDE_DEFAULT_MODEL = "claude-opus-5"
+
+# 분석 대상 기간(일). 프롬프트에 실을 태스크를 오늘~4주로 제한해 입력 토큰을 억제한다.
+_ANALYSIS_WINDOW_DAYS = 28
+
+# generate 액션 고정값 — 담당자/공수/진행률은 LLM이 아니라 서버가 정한다
+_GENERATED_ASSIGNEE = 'AI생성'
+_GENERATED_EFFORT = 2
+_GENERATE_MAX_ITEMS = 30
 
 
 def _call_llm(system_prompt: str, user_prompt: str) -> str:
     """AI_MODEL 설정에 따라 LLM을 호출한다.
 
-    GEMINI/GEMMA → OpenAI 호환 엔드포인트, LOCAL → claude -p CLI.
+    GEMINI → OpenAI 호환 엔드포인트, CLAUDE → Anthropic Messages API,
+    LOCAL → claude -p CLI.
     """
     provider = current_app.config.get("AI_MODEL", "LOCAL")
-    if provider in ("GEMINI", "GEMMA"):
+    if provider == "GEMINI":
         return _call_openai_compatible(system_prompt, user_prompt)
+    if provider == "CLAUDE":
+        return _call_anthropic(system_prompt, user_prompt)
     return _call_claude_cli(system_prompt, user_prompt)
 
 
 def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
-    """OpenAI 호환 엔드포인트(사내 LiteLLM/GEMMA, Gemini)를 호출한다."""
+    """OpenAI 호환 엔드포인트(Gemini)를 호출한다."""
     from openai import OpenAI
 
     cfg = current_app.config
-    provider = cfg.get("AI_MODEL")
     base_url = cfg.get("AI_BASE_URL") or _GEMINI_DEFAULT_BASE_URL
     # 추론(thinking) 모델은 "생각" 토큰까지 소비하므로 답(JSON)을 낼 여유가 필요하다.
-    # GEMMA(llama.cpp)는 서버 ctx-size 8192 전제로 2048 허용(입력+출력 < 8192).
     max_tokens = 2048
-    # GEMMA(llama.cpp)는 지정 슬롯의 KV 캐시를 쓰도록 id_slot을 고정 전달한다.
-    # Gemini 등 다른 OpenAI 호환 엔드포인트엔 미지원 파라미터라 보내지 않는다.
-    create_kwargs = {}
-    if provider == "GEMMA":
-        create_kwargs["extra_body"] = {"id_slot": _GEMMA_ID_SLOT}
     try:
         client = OpenAI(base_url=base_url, api_key=cfg["AI_API_KEY"])
         resp = client.chat.completions.create(
@@ -65,7 +68,6 @@ def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
             ],
             temperature=0,
             max_tokens=max_tokens,
-            **create_kwargs,
         )
         choice = resp.choices[0]
         output = (choice.message.content or "").strip()
@@ -81,6 +83,35 @@ def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
         return output
     except Exception as e:
         raise RuntimeError(f"LLM 호출 오류({cfg.get('AI_MODEL')}): {e}")
+
+
+def _call_anthropic(system_prompt: str, user_prompt: str) -> str:
+    """Anthropic Messages API를 호출한다 (AI_MODEL=CLAUDE).
+
+    Claude 4.7 이후 모델은 temperature/top_p 를 받지 않으므로(400) 추론 깊이는
+    output_config.effort 로 조절한다. 자연어→JSON 변환은 짧고 지연에 민감한
+    작업이라 medium 사용. thinking 은 기본 ON이며 max_tokens 를 함께 소비한다.
+    """
+    from anthropic import Anthropic
+
+    cfg = current_app.config
+    try:
+        client = Anthropic(api_key=cfg["AI_API_KEY"])
+        resp = client.messages.create(
+            model=cfg.get("AI_MODEL_NAME") or _CLAUDE_DEFAULT_MODEL,
+            max_tokens=16000,
+            system=system_prompt,
+            output_config={"effort": "medium"},
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        if resp.stop_reason == "refusal":
+            raise RuntimeError("Claude가 안전 정책에 따라 요청을 거부했습니다")
+        output = "".join(b.text for b in resp.content if b.type == "text").strip()
+        if not output:
+            raise RuntimeError(f"LLM이 빈 응답을 반환했습니다 (stop_reason={resp.stop_reason})")
+        return output
+    except Exception as e:
+        raise RuntimeError(f"LLM 호출 오류(CLAUDE): {e}")
 
 
 def _call_claude_cli(system_prompt: str, user_prompt: str) -> str:
@@ -148,7 +179,7 @@ def _build_system_prompt(items_summary: str, project_overview: str = "") -> str:
    함께 언급하세요.
 
 ## WBS 컬럼 정보
-- category: 구분 (기획, 설계, 개발, QA 등)
+- category: 구분 (작업 성격 분류 — 아래 "그리드 계층 구조" 참고)
 - task_name: Task명
 - subtask: 서브태스크
 - detail: 세부항목
@@ -161,7 +192,37 @@ def _build_system_prompt(items_summary: str, project_overview: str = "") -> str:
 - progress: 진행률 (0~100)
 - status: 진행상태 (담당자가 자유롭게 기입하는 텍스트. 리스크, 이슈, 지연사유, 진행메모 등이 포함될 수 있음)
 
+## 그리드 계층 구조 (구분 > Task > 서브태스크 > 세부항목)
+- **구분(category)** — 작업의 성격 분류. 아래 표준 값 중에서 고른다
+- **Task(task_name)** — 대표 작업. 기능/모듈 단위의 큰 묶음 (예: "주문 관리", "실시간 협업")
+- **서브태스크(subtask)** — 그 대표 작업에 속한 개별 작업 단위 (예: "API 구현", "SSE 브로커")
+- **세부항목(detail)** — 해당 서브태스크에서 실제로 무엇을 하는지 적는 설명. 서브태스크의 상세 내용이다
+
+예) [개발] 주문 관리 / API 구현 / 주문 생성·취소 엔드포인트 구현
+
+### 구분(category) 표준 값
+기획 · 설계 · 개발 · 개발/관리 · 테스트 · 운영 · 인프라 · 보안 · 배포
+
+### 구분 추론 규칙
+사용자가 구분을 직접 말하지 않아도 **Task·서브태스크·세부항목의 내용에서 유추해 반드시 채운다** (빈 값 금지).
+- 요구사항 수집, 범위·일정 정의 → 기획
+- 화면/DB/API 설계, ERD, 명세서, 아키텍처 → 설계
+- 기능 구현, 코딩, 리팩터링, 마이그레이션 스크립트 → 개발
+- 일정·이슈·산출물 관리, 회의, 보고, 리뷰 → 개발/관리
+- 단위/통합/인수 테스트, QA, 시나리오 검증, 버그 수정 검증 → 테스트
+- 장애 대응, 모니터링, 운영 이관, 사용자 지원 → 운영
+- 서버·네트워크·DB 구축, CI 환경, 리소스 증설 → 인프라
+- 취약점 점검, 인증·권한, 암호화, 보안 심사 → 보안
+- 릴리스, 배포 자동화, 롤백, 형상 관리 → 배포
+
+예) "테스트 태스크 만들어줘" → category="테스트", "결제 API 만들어줘" → category="개발".
+표준 값으로 분류가 애매하면 가장 가까운 값을 고르고, 아래 WBS 데이터에 이미 쓰이고 있는
+구분 값이 있으면 **새 값을 만들지 말고 그 값을 재사용**한다.
+
 ## 현재 WBS 데이터 요약
+※ 아래 목록은 **전체가 아니라 분석 대상(미완료 + 지연·향후 4주)** 만 담고 있습니다.
+   완료 항목과 4주 밖 미래 항목은 헤더 집계에만 반영됩니다. 목록에 없는 항목도
+   query의 filters로 조회할 수 있으니, 요약에 없다는 이유로 "없다"고 단정하지 마세요.
 {items_summary}
 
 ## 명령 타입
@@ -170,6 +231,7 @@ def _build_system_prompt(items_summary: str, project_overview: str = "") -> str:
 3. **delete** — 항목 삭제
 4. **update** — 항목 수정
 5. **move** — 행 순서 이동 (TID/행 번호 기준)
+6. **generate** — 프로젝트 개요/마일스톤을 근거로 태스크 여러 건 일괄 생성
 
 ## 응답 형식 (JSON만 반환, 코드블록 없이)
 
@@ -257,6 +319,54 @@ filters에 사용 가능한 특수 키:
 ※ 예: "43번을 326번 위로 이동" → source_row=43, target_row=326, position="above".
 ※ 예: "10번을 5번 아래로" → source_row=10, target_row=5, position="below".
 
+### generate 타입 예시 (마일스톤 기반 태스크 일괄 생성):
+{{
+    "action": "generate",
+    "items": [
+        {{"category": "설계", "task_name": "DB 설계", "subtask": "ERD 작성", "detail": "주문/결제 테이블 정의"}},
+        {{"category": "개발", "task_name": "주문 관리", "subtask": "API 구현", "detail": "주문 생성·취소 엔드포인트"}}
+    ],
+    "description": "마일스톤 M1 기준으로 2건을 생성했습니다."
+}}
+
+### generate 타입 예시 2 — 기존 Task가 있어 세부항목을 추가하는 경우:
+현재 WBS에 `[개발] 실시간 협업 / SSE 브로커` 항목이 이미 있을 때, 같은 구분·Task·서브태스크를
+**그대로 복사**하고 detail 만 새로 쓴다 (네 필드 모두 반드시 채운다):
+{{
+    "action": "generate",
+    "items": [
+        {{"category": "개발", "task_name": "실시간 협업", "subtask": "SSE 브로커",
+          "detail": "Redis 장애 시 인메모리 폴백 전환 처리", "plan_start": "2026-08-24", "plan_end": "2026-08-25"}}
+    ],
+    "description": "SSE 브로커 세부항목 1건을 추가했습니다."
+}}
+※ category 에 마일스톤명("실시간 협업 안정화")을 넣거나 task_name 을 빈 값으로 두는 것은 **오류**다.
+   category=작업 성격(개발), task_name=기능/모듈(실시간 협업), subtask=작업 단위(SSE 브로커).
+
+※ generate 규칙:
+- "마일스톤 기준으로 태스크 만들어줘", "WBS 초안 작성해줘" 같은 **생성 요청**에 사용 (단건 추가는 add)
+- 위 **프로젝트 개요**에 PM이 기입한 목적·마일스톤을 근거로 작성한다. 개요가 비어 있으면
+  생성하지 말고 query로 응답하며 description에 개요 기입이 필요하다고 안내한다
+- **기존 Task가 있으면** 위 WBS 데이터의 `구분`/`Task`/`서브태스크` 값을 그대로 재사용하고
+  새로운 **세부항목(detail)** 을 채운다. 유사한 구분/Task를 새로 만들지 말 것
+- 기존 Task가 없으면 마일스톤 단위로 구분/Task/서브태스크/세부항목을 새로 구성한다
+- **네 필드는 위 "그리드 계층 구조"를 그대로 따른다**: 구분=작업 성격(표준 값에서 선택),
+  Task=기능/모듈 단위, 서브태스크=그 안의 작업 단위, 세부항목=서브태스크의 상세 설명.
+  구분은 사용자가 말하지 않아도 **생성할 작업 내용에서 추론해 채우고**, 위 WBS 데이터에
+  이미 쓰인 구분 값이 있으면 그것을 재사용한다. **마일스톤명이나 Task명을 구분에 넣지 말 것**
+- 같은 요청 안에서 성격이 다른 작업이 섞이면 항목별로 구분을 다르게 넣는다
+  (예: "결제 기능 만들고 테스트까지" → 구현 항목은 개발, 검증 항목은 테스트)
+- **담당자·공수·진행률은 넣지 말 것** — 서버가 '{_GENERATED_ASSIGNEE}' / {_GENERATED_EFFORT} / 0 으로 고정한다
+- **일정**: 프로젝트 개요의 마일스톤이나 사용자 질의에 **시기가 적혀 있으면 그에 맞춰**
+  plan_start/plan_end를 YYYY-MM-DD로 넣는다. "8월 3주" 같은 표현은 해당 주의 평일 범위로
+  환산한다(오늘이 {today}일 때 "8월 3주" → 2026-08-17~2026-08-21 사이). 토·일은 배정 금지.
+  마일스톤별로 일정이 다르면 항목별로 다르게 넣어야 하며, **전 항목을 같은 날짜로 몰지 말 것**.
+  어디에도 시기 언급이 없을 때만 생략한다 (생략 시 서버가 오늘 기준 영업일로 채움)
+- **중복 금지**: 위 WBS 데이터에 이미 있는 (구분·Task·서브태스크·세부항목) 조합은 다시 만들지 않는다.
+  기존 구분/Task/서브태스크 체계는 따르되 세부항목은 **기존에 없는 새로운 작업 단위**로 작성한다.
+  기존 항목의 내용을 고치려는 것이면 generate 가 아니라 update 를 사용한다
+- 한 번에 최대 {_GENERATE_MAX_ITEMS}건
+
 중요: JSON만 응답하세요. 코드블록으로 감싸지 마세요. 날짜는 반드시 YYYY-MM-DD 형식을 사용하세요.
 4/22 같은 형식은 올해 기준으로 2026-04-22 로 변환하세요."""
 
@@ -286,34 +396,6 @@ def _get_project_overview(project_id: int) -> str:
     return "\n".join(parts)
 
 
-def _get_items_summary(project_id: int) -> str:
-    """현재 WBS 데이터의 요약을 문자열로 반환한다."""
-    items = wbs_model.get_flat_items(project_id)
-    if not items:
-        return "항목 없음"
-
-    lines = []
-    for i, item in enumerate(items):
-        row_num = i + 1
-        name = item.get('task_name', '') or ''
-        sub = item.get('subtask', '') or ''
-        assignee = item.get('assignee', '') or ''
-        progress = item.get('progress', 0) or 0
-        plan_end = item.get('plan_end', '') or ''
-        actual_end = item.get('actual_end', '') or ''
-        detail = (item.get('detail', '') or '')[:30]
-        sched = _compute_schedule_info(item)
-        gap_info = ''
-        if sched['end_gap_days'] is not None and sched['end_gap_days'] != 0:
-            gap_info = f" 종료갭:{sched['end_gap_days']:+d}일"
-        status = (item.get('status', '') or '')[:40]
-        lines.append(
-            f"  {row_num}. [{name}] 서브:{sub} 담당:{assignee} "
-            f"진행:{progress}% 계획완료:{plan_end} 실제종료:{actual_end}{gap_info} 상태:{status} 세부:{detail}"
-        )
-    return f"총 {len(items)}건:\n" + "\n".join(lines)
-
-
 def _parse_date(value) -> "date | None":
     """'YYYY-MM-DD' 문자열을 date로 파싱한다. 실패 시 None."""
     s = (value or '').strip()
@@ -323,20 +405,17 @@ def _parse_date(value) -> "date | None":
         return None
 
 
-# 압축 요약에서 섹션별로 나열할 최대 항목 수 (초과분은 "...외 N건"으로 표기)
-_COMPACT_DELAYED_CAP = 12
-_COMPACT_WEEK_CAP = 30
+def _get_items_summary(project_id: int) -> str:
+    """분석용 WBS 요약을 반환한다 (미완료 + 지연·향후 4주 항목만).
 
+    전체 행을 나열하면 입력 토큰이 프로젝트 규모에 비례해 커지므로 대상을 좁힌다:
+    ① 완료(진행률 100) 제외 — 분석 기준은 남아 있는 태스크다.
+    ② 계획기간이 오늘~4주 창을 벗어난 미래 항목 제외 — 현 시점 의사결정과 무관.
+    단, 기한이 지난 미완료(지연)는 창 밖이어도 분석의 핵심이라 포함한다.
 
-def _get_compact_summary(project_id: int) -> str:
-    """작은 컨텍스트 모델(GEMMA)용 요약.
-
-    전체 행을 나열하면 컨텍스트(예: 4096토큰)를 초과하므로, 완료 항목을 제외하고
-    ①기한경과·미완료(지연), ②이번주·다음주(오늘 기준 월~다음주 일, 14일) 계획기간이
-    겹치는 미완료 항목만 핵심 필드(서브태스크/세부항목/담당자/계획시작/진행률/진행상태)와
-    함께 추린다. 집계 헤더는 전체 건수만 제공. query 필터는 LLM이 생성하고 실제 조회는
-    _execute_query가 전체 데이터로 수행하므로 결과 정확도는 유지되며, insight는 아래
-    요약을 근거로 작성된다.
+    전체 건수·완료 수는 헤더 집계로 남겨 LLM이 전반 맥락을 잃지 않게 하고,
+    LLM이 만든 query 필터는 `_execute_query`가 전체 데이터로 실행하므로 조회
+    결과 정확도에는 영향이 없다 (이 요약은 insight 근거·필터 생성용).
     """
     items = wbs_model.get_flat_items(project_id)
     if not items:
@@ -348,105 +427,61 @@ def _get_compact_summary(project_id: int) -> str:
     not_started = total - done - in_prog
     avg_progress = round(sum(it.get('progress') or 0 for it in items) / total)
 
-    assignee_counts = Counter(((it.get('assignee') or '').strip() or '미지정') for it in items)
-    assignee_str = ", ".join(f"{a}({c})" for a, c in assignee_counts.most_common())
-
-    categories = sorted({(it.get('category') or '').strip() for it in items if (it.get('category') or '').strip()})
-    category_str = ", ".join(categories) if categories else "(없음)"
+    # 프로젝트가 실제로 쓰고 있는 구분 값 — 생성 시 새 값을 만들지 않고 재사용하게 하는 근거.
+    # 완료·미래 항목까지 포함해 집계한다(아래 목록에서 걸러지더라도 어휘는 유효하므로).
+    used_categories = []
+    for it in items:
+        c = (it.get('category') or '').strip()
+        if c and c not in used_categories:
+            used_categories.append(c)
+    cat_line = ("현재 사용 중인 구분: " + ", ".join(used_categories)) if used_categories \
+        else "현재 사용 중인 구분: (없음 — 표준 값에서 추론해 채울 것)"
 
     today = date.today()
-    week_start = today - timedelta(days=today.weekday())   # 이번주 월요일
-    week_end = week_start + timedelta(days=13)              # 다음주 일요일
+    window_end = today + timedelta(days=_ANALYSIS_WINDOW_DAYS)
 
-    def _line(tid, item, tail):
-        sub = (item.get('subtask') or '')
-        assignee = (item.get('assignee') or '')
-        ps = (item.get('plan_start') or '')
-        prog = item.get('progress') or 0
-        status = (item.get('status') or '')[:30]
-        detail = (item.get('detail') or '')[:30]
-        return (f"  TID{tid}. 서브:{sub} 담당:{assignee} 계획시작:{ps} 진행:{prog}% "
-                f"상태:{status} 세부:{detail}{tail}")
-
-    delayed = []   # (gap, line)
-    week = []      # (sort_key, line)
+    lines = []
+    skipped_future = 0
     for i, item in enumerate(items):
+        row_num = i + 1   # TID는 전체 flat 순번(그리드 표시)과 일치해야 한다
         if (item.get('progress') or 0) >= 100:
-            continue  # 완료 제외
-        tid = i + 1
+            continue
+
         sched = _compute_schedule_info(item)
-        if sched['has_end_delay']:
-            gap = sched['end_gap_days']
-            delayed.append((gap, _line(tid, item, f" [지연{gap}일·계획완료:{item.get('plan_end') or ''}]")))
-        # 이번주·다음주 윈도우와 계획기간 겹침 (start<=winEnd AND end>=winStart)
-        ps_d = _parse_date(item.get('plan_start'))
-        pe_d = _parse_date(item.get('plan_end'))
-        s = ps_d or pe_d
-        e = pe_d or ps_d
-        if s and e and s <= week_end and e >= week_start:
-            week.append((s, _line(tid, item, "")))
+        ps = _parse_date(item.get('plan_start'))
+        pe = _parse_date(item.get('plan_end'))
+        s, e = (ps or pe), (pe or ps)
+        # 계획기간이 오늘~창끝과 겹치면 대상. 일자 미기입은 판단 불가라 포함.
+        in_window = s is None or (s <= window_end and e >= today)
+        if not (in_window or sched['has_end_delay']):
+            skipped_future += 1
+            continue
 
-    def _block(rows, cap):
-        rows_sorted = [ln for _, ln in rows]
-        shown = rows_sorted[:cap]
-        more = len(rows_sorted) - len(shown)
-        if not shown:
-            return "  (없음)"
-        block = "\n".join(shown)
-        if more > 0:
-            block += f"\n  ...외 {more}건"
-        return block
+        cat = item.get('category', '') or '-'
+        name = item.get('task_name', '') or ''
+        sub = item.get('subtask', '') or ''
+        assignee = item.get('assignee', '') or ''
+        progress = item.get('progress', 0) or 0
+        plan_end = item.get('plan_end', '') or ''
+        detail = (item.get('detail', '') or '')[:30]
+        gap_info = ''
+        if sched['end_gap_days'] is not None and sched['end_gap_days'] != 0:
+            gap_info = f" 종료갭:{sched['end_gap_days']:+d}일"
+        status = (item.get('status', '') or '')[:40]
+        lines.append(
+            f"  {row_num}. [{cat}] {name} / 서브:{sub} 담당:{assignee} "
+            f"진행:{progress}% 계획완료:{plan_end}{gap_info} 상태:{status} 세부:{detail}"
+        )
 
-    delayed.sort(key=lambda x: x[0], reverse=True)
-    week.sort(key=lambda x: x[0])
-
+    body = "\n".join(lines) if lines else "  (해당 없음)"
     return (
         f"총 {total}건 (완료 {done} / 진행중 {in_prog} / 미착수 {not_started}, 평균진행률 {avg_progress}%)\n"
-        f"담당자별 건수: {assignee_str}\n"
-        f"구분 목록: {category_str}\n"
-        f"[지연] 기한경과·미완료 {len(delayed)}건:\n{_block(delayed, _COMPACT_DELAYED_CAP)}\n"
-        f"[이번주·다음주] 미완료 {len(week)}건 (윈도우 {week_start}~{week_end}):\n{_block(week, _COMPACT_WEEK_CAP)}"
+        f"{cat_line}\n"
+        f"아래는 **미완료 중 지연 또는 계획기간이 {today}~{window_end}(4주)와 겹치는 {len(lines)}건**입니다:\n"
+        f"{body}\n"
+        f"※ 완료 {done}건 / 4주 창 밖 미래 {skipped_future}건은 목록에서 생략됨 "
+        f"(질의 시 filters로 전체 조회 가능)"
     )
-
-
-def _build_compact_system_prompt(items_summary: str, project_overview: str = "") -> str:
-    """작은 컨텍스트 모델(GEMMA)용 축약 시스템 프롬프트.
-
-    _build_system_prompt와 동일한 JSON 프로토콜·필터 키를 유지하되, 장황한 설명/예시를
-    덜어내 토큰을 절약한다(한글은 llama.cpp 계열 토크나이저에서 토큰 수가 크다).
-    """
-    today = datetime.now().strftime('%Y-%m-%d')
-    year = today[:4]
-    overview_block = project_overview if project_overview else "(미기입)"
-    return f"""당신은 WBS 관리 AI 어시스턴트입니다. 사용자 질의를 분석해 JSON만 반환하세요(코드블록 금지).
-
-오늘: {today}
-
-프로젝트 개요:
-{overview_block}
-
-WBS 현황 요약:
-{items_summary}
-
-## 명령(action)
-- query 조회: {{"action":"query","filters":{{...}},"description":"...","insight":"(선택)분석코멘트"}}
-- add 추가: {{"action":"add","data":{{"task_name":"...","subtask":"...","assignee":"...","plan_start":"YYYY-MM-DD","plan_end":"YYYY-MM-DD","effort":2}},"description":"..."}}
-- delete 삭제: {{"action":"delete","row_number":11,"description":"..."}}
-- update 수정: {{"action":"update","row_number":5,"data":{{"progress":80,"status":"진행중"}},"description":"..."}}
-- move 순서이동: {{"action":"move","source_row":43,"target_row":326,"position":"above","description":"..."}}
-
-## filters 키
-- 일반 컬럼(assignee, category, status, progress 등): 값 일치
-- delayed:true(기한경과·미완료) / schedule_delayed:true(실제종료 지연) / schedule_gap_min:N(N일이상 지연)
-- schedule_early:true(조기완료) / start_delayed:true(지연착수) / start_early:true(선착수) / date_diff:true(계획·실제 불일치)
-- detail_contains:"키워드"(세부항목 포함) / progress_lt:N(진행률 미만) / progress_gte:N(진행률 이상)
-
-규칙:
-- row_number/source_row/target_row는 사용자가 말한 TID(1-base)를 그대로 사용.
-- position은 "above"(위, 기본) 또는 "below"(아래).
-- 날짜는 YYYY-MM-DD. "4/22"는 {year} 기준으로 변환.
-- 전반 진척/리스크 질의는 위 현황 요약을 근거로 insight에 작성.
-- JSON만, 코드블록 없이 응답."""
 
 
 def _calc_day_diff(date_a: str, date_b: str) -> int:
@@ -611,6 +646,76 @@ def _execute_add(project_id: int, data: dict) -> dict:
     return {'item': item}
 
 
+def _next_business_day(d: "date") -> "date":
+    """주말이면 다음 월요일로 밀어준다 (5=토, 6=일)."""
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
+
+
+def _add_business_days(d: "date", days: int) -> "date":
+    """d 로부터 영업일 days 일 뒤 날짜를 반환한다 (주말 건너뜀)."""
+    cur = _next_business_day(d)
+    for _ in range(days):
+        cur = _next_business_day(cur + timedelta(days=1))
+    return cur
+
+
+def _execute_generate(project_id: int, items: list) -> dict:
+    """마일스톤 기반 태스크를 일괄 생성한다.
+
+    담당자·공수·진행률은 서버가 고정하고(LLM 값 무시), 일정을 지정하지 않은 항목은
+    오늘(주말이면 다음 영업일)부터 공수만큼의 영업일로 계획일자를 채운다.
+    구분·Task·서브태스크·세부항목이 모두 같은 기존 항목은 건너뛴다(LLM 중복 생성 방어).
+    """
+    if not isinstance(items, list) or not items:
+        return {'error': '생성할 항목이 없습니다.'}
+
+    plan_start = _next_business_day(date.today())
+    plan_end = _add_business_days(plan_start, _GENERATED_EFFORT - 1)
+
+    def _key(d):
+        return tuple((d.get(k) or '').strip() for k in ('category', 'task_name', 'subtask', 'detail'))
+
+    seen = {_key(it) for it in wbs_model.get_flat_items(project_id)}
+
+    created, skipped, invalid = [], 0, 0
+    for raw in items[:_GENERATE_MAX_ITEMS]:
+        if not isinstance(raw, dict):
+            invalid += 1
+            continue
+        key = _key(raw)
+        # Task명·세부항목이 없으면 그리드에서 식별 불가한 행이 된다.
+        # (LLM이 category 자리에 마일스톤명을 넣고 task_name을 비우는 실수를 하므로 방어)
+        if not (raw.get('task_name') or '').strip() or not (raw.get('detail') or '').strip():
+            invalid += 1
+            continue
+        if key in seen:
+            skipped += 1
+            continue
+        seen.add(key)
+        created.append(wbs_service.create_item({
+            'project_id': project_id,
+            'category': raw.get('category', ''),
+            'task_name': raw.get('task_name', ''),
+            'subtask': raw.get('subtask', ''),
+            'detail': raw.get('detail', ''),
+            'plan_start': (raw.get('plan_start') or '').strip() or str(plan_start),
+            'plan_end': (raw.get('plan_end') or '').strip() or str(plan_end),
+            'assignee': _GENERATED_ASSIGNEE,
+            'effort': _GENERATED_EFFORT,
+            'progress': 0,
+        }))
+
+    if not created:
+        if skipped:
+            return {'error': '이미 등록된 항목이라 새로 만들 것이 없습니다.'}
+        if invalid:
+            return {'error': 'Task명·세부항목이 비어 생성하지 못했습니다. 다시 시도해주세요.'}
+        return {'error': '생성할 항목이 없습니다.'}
+    return {'items': created, 'count': len(created), 'skipped': skipped + invalid}
+
+
 def _execute_delete(project_id: int, row_number: int) -> dict:
     """행 번호로 WBS 항목을 삭제한다."""
     items = wbs_model.get_flat_items(project_id)
@@ -694,13 +799,8 @@ def _execute_move(project_id: int, source_row: int, target_row: int, position: s
 def process_command(project_id: int, user_input: str) -> dict:
     """자연어 입력을 파싱하고 실행하여 결과를 반환한다."""
     project_overview = _get_project_overview(project_id)
-    if current_app.config.get('AI_MODEL') == 'GEMMA':
-        # 작은 컨텍스트 모델 — 전체 행 대신 압축 요약 + 축약 프롬프트 사용
-        items_summary = _get_compact_summary(project_id)
-        system_prompt = _build_compact_system_prompt(items_summary, project_overview[:800])
-    else:
-        items_summary = _get_items_summary(project_id)
-        system_prompt = _build_system_prompt(items_summary, project_overview=project_overview)
+    items_summary = _get_items_summary(project_id)
+    system_prompt = _build_system_prompt(items_summary, project_overview=project_overview)
     user_prompt = f'질의: "{user_input}"\nJSON 형식으로만 응답하세요. 코드블록으로 감싸지 마세요.'
 
     try:
@@ -734,6 +834,17 @@ def process_command(project_id: int, user_input: str) -> dict:
             return {
                 'success': True,
                 'action': 'add',
+                'message': description,
+                'data': result,
+            }
+
+        elif action == 'generate':
+            result = _execute_generate(project_id, parsed.get('items', []))
+            if 'error' in result:
+                return {'success': False, 'message': result['error']}
+            return {
+                'success': True,
+                'action': 'generate',
                 'message': description,
                 'data': result,
             }

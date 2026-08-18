@@ -1144,10 +1144,15 @@ function sendAiQuery() {
 
                     html += '<button class="btn ai-clear-btn" onclick="clearAiFilter()">필터 해제</button>';
                 }
-            } else if (res.action === 'add' || res.action === 'delete' || res.action === 'update' || res.action === 'move') {
+            } else if (res.action === 'add' || res.action === 'generate' || res.action === 'delete' || res.action === 'update' || res.action === 'move') {
                 aiFilterIds = null;
                 loadItems();
                 html += '<div class="ai-msg">' + esc(res.message) + '</div>';
+                if (res.action === 'generate' && res.data && res.data.count) {
+                    var note = res.data.count + '건 생성 (담당자 AI생성 / 공수 2)';
+                    if (res.data.skipped) note += ', 중복 ' + res.data.skipped + '건 건너뜀';
+                    html += '<div class="ai-msg">' + note + '. 내용을 확인하고 담당자·일정을 조정하세요.</div>';
+                }
             } else {
                 html += '<div class="ai-msg">' + esc(res.message) + '</div>';
             }
