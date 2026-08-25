@@ -1,8 +1,10 @@
 """태스크 갱신 알림 — 설정 저장 / 이번주 필터 / 담당자별 발송 검증."""
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
+from app import scheduler
+from app.extensions import get_db
 from app.services import notification_service
 
 
@@ -125,3 +127,88 @@ def test_send_task_update_mails_empty_no_send(app, admin_client, monkeypatch):
 
     assert result['sent'] == 0
     assert calls == []
+
+
+def _weekday_at(hour, minute):
+    """이번주 월요일의 지정 시각 (평일 고정)."""
+    monday = _this_monday()
+    return datetime(monday.year, monday.month, monday.day, hour, minute)
+
+
+def _notify_project(admin_client, name, notify_time):
+    return admin_client.post('/api/projects', json={
+        'name': name, 'task_notify_enabled': 1, 'task_notify_time': notify_time,
+    }).get_json()['id']
+
+
+def _last_date(app, pid):
+    with app.app_context():
+        return get_db().execute(
+            "SELECT task_notify_last_date FROM project WHERE id = ?", (pid,)
+        ).fetchone()['task_notify_last_date']
+
+
+def test_scheduler_sends_once_per_day(app, admin_client, monkeypatch):
+    """발송시각이 지나면 1회 발송하고 날짜를 DB에 기록한다.
+
+    하루 1회 판정이 DB(task_notify_last_date) 기준이므로, 프로세스가 재기동되어
+    모듈 상태가 초기화되어도(= 아래 두 번째 호출) 같은 날 다시 보내지 않는다.
+    """
+    pid = _notify_project(admin_client, 'SchedOnce', '09:00')
+    calls = []
+    monkeypatch.setattr(scheduler.notification_service, 'send_task_update_mails',
+                        lambda p: calls.append(p) or {'sent': 1, 'total': 1})
+    monkeypatch.setattr(scheduler, '_now', lambda: _weekday_at(9, 30))
+
+    with app.app_context():
+        scheduler._run_due_notifications()
+    assert calls == [pid]
+    assert _last_date(app, pid) == _this_monday().strftime('%Y-%m-%d')
+
+    with app.app_context():
+        scheduler._run_due_notifications()
+    assert calls == [pid]   # 재기동/재폴링에도 추가 발송 없음
+
+
+def test_scheduler_skips_before_target_time(app, admin_client, monkeypatch):
+    """발송시각 전에는 보내지 않고 기록도 남기지 않는다."""
+    pid = _notify_project(admin_client, 'SchedEarly', '09:00')
+    calls = []
+    monkeypatch.setattr(scheduler.notification_service, 'send_task_update_mails',
+                        lambda p: calls.append(p) or {'sent': 1, 'total': 1})
+    monkeypatch.setattr(scheduler, '_now', lambda: _weekday_at(8, 59))
+
+    with app.app_context():
+        scheduler._run_due_notifications()
+    assert calls == []
+    assert _last_date(app, pid) is None
+
+
+def test_scheduler_skips_late_startup(app, admin_client, monkeypatch):
+    """발송시각을 크게 지난 기동은 뒤늦게 보내지 않고 처리 완료로 기록한다."""
+    pid = _notify_project(admin_client, 'SchedLate', '09:00')
+    calls = []
+    monkeypatch.setattr(scheduler.notification_service, 'send_task_update_mails',
+                        lambda p: calls.append(p) or {'sent': 1, 'total': 1})
+    monkeypatch.setattr(scheduler, '_now', lambda: _weekday_at(18, 40))
+
+    with app.app_context():
+        scheduler._run_due_notifications()
+    assert calls == []
+    assert _last_date(app, pid) == _this_monday().strftime('%Y-%m-%d')
+
+
+def test_scheduler_skips_weekend(app, admin_client, monkeypatch):
+    """주말에는 발송하지 않는다."""
+    pid = _notify_project(admin_client, 'SchedWeekend', '09:00')
+    calls = []
+    monkeypatch.setattr(scheduler.notification_service, 'send_task_update_mails',
+                        lambda p: calls.append(p) or {'sent': 1, 'total': 1})
+    saturday = _this_monday() + timedelta(days=5)
+    monkeypatch.setattr(scheduler, '_now',
+                        lambda: datetime(saturday.year, saturday.month, saturday.day, 10, 0))
+
+    with app.app_context():
+        scheduler._run_due_notifications()
+    assert calls == []
+    assert _last_date(app, pid) is None

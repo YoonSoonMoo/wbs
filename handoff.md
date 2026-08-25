@@ -273,7 +273,10 @@ wbs/
 
 ### 태스크 갱신 알림 자동 메일 (APScheduler)
 - **목적**: 프로젝트별 지정 시각에 담당자에게 이번주 할당 태스크를 메일로 보내 일정·진행률 갱신 유도
-- **스케줄러**(`scheduler.py`): `BackgroundScheduler` 1개, **1분 간격 폴링**. `task_notify_enabled=1` 프로젝트의 `task_notify_time`이 지난 평일에 하루 1회 발송. 중복 방지는 메모리 `_sent_today`. 분 단위 폴링 이유: 프로젝트별 시각 상이 + 런타임 변경
+- **스케줄러**(`scheduler.py`): `BackgroundScheduler` 1개, **1분 간격 폴링**. `task_notify_enabled=1` 프로젝트의 `task_notify_time`이 지난 평일에 하루 1회 발송. 분 단위 폴링 이유: 프로젝트별 시각 상이 + 런타임 변경
+    - **하루 1회 판정은 DB `project.task_notify_last_date`**(발송 완료 또는 건너뜀을 기록). 메모리 기록이던 이전 방식은 **재기동마다 초기화되어 발송시각이 지난 뒤 기동하면 그날 메일을 다시 발송**했다
+    - **뒤늦은 발송 차단**: 발송시각을 `_CATCHUP_MINUTES`(120분) 넘겨 처리되는 경우(종일 중단 후 저녁 기동 등)는 보내지 않고 그날 처리 완료로 기록. → 재기동 자체로는 메일이 나가지 않는다
+    - 발송 시도 **직전**에 날짜를 기록한다(발송 예외 시 1분마다 재시도 폭주 방지)
     - **단일 프로세스 전제**: waitress 단일 프로세스라 중복 없음. 멀티프로세스 시 외부 스케줄러/락 필요
     - 기동 가드: TESTING·`ENABLE_SCHEDULER=0`·Flask reloader 부모 프로세스에서는 미기동
 - **발송**(`notification_service.py`): 이번주 미완료 태스크 → 담당자별 그룹화 → 이메일 조회 → HTML 발송. 0건/이메일 없는 담당자는 미발송
@@ -282,8 +285,10 @@ wbs/
 ### 프론트엔드: template/wbs-manage.html 기반
 - WBS 그리드는 `wbs.html`(독립 페이지, `wbs.css`). 대시보드(`index.html`)만 `base.html` 상속
 - **상단바 구성**: 좌측 제목(프로젝트명 + `Work Breakdown Structure` + 버전 + 가이드 `?` 원형 버튼) / 우측 기능 버튼(대시보드 · Gantt · 통계 · 이력) + **데이터관리 드롭다운**(CSV·Excel 내보내기 / Excel 붙여넣기 · 샘플.xlsx 다운로드) + 구분선 오른쪽 **사용자 영역**(유저명·역할, 로그아웃). 아이콘은 이모지 대신 **인라인 SVG**(`currentColor` stroke, `.btn-top svg`). 드롭다운 토글은 `wbs.html` 인라인 스크립트 `toggleTopMenu()`(바깥 클릭 시 닫힘)
-- 일반 셀 `contenteditable` 인라인 편집(300ms debounce → PATCH 자동저장, 앞뒤 trim). 세부항목/진행상태는 더블클릭 팝업(개행 지원). 날짜 컬럼 자동 변환(다양한 형식 → yyyy-MM-dd, 그리드는 yy-MM-dd 축약 표시)
-- 행번호(#) = DB 고유 ID. 복수 선택(클릭/Shift/Ctrl/# 전체) → 일괄 삭제. 우클릭 컨텍스트 메뉴(삽입/복제/삭제/행이동 TID). Excel 붙여넣기(멀티셀 자동감지)
+- **셀 선택은 엑셀 방식**(`grid.js` §Cell Selection): 클릭=선택(편집 아님), 드래그·Shift+클릭·Shift+방향키로 사각형 범위, Ctrl+A 전체. 상태는 `cellSel {r1,c1,r2,c2}`(렌더링된 행 위치 + COLUMNS 인덱스, 앵커=r1/c1) → `.cell-selected`/`.cell-active` 클래스로 표시하고 재렌더 후 `applyCellSelection()`으로 복원
+- **편집 진입**: 더블클릭 / F2 / Enter / 문자 입력(입력 문자로 대체). 진입 시에만 `contenteditable`을 부여하고 blur 시 제거(300ms debounce → PATCH 자동저장, 앞뒤 trim). Enter=커밋+아래 이동, Tab=커밋+오른쪽 이동, Escape=취소. 세부항목/진행상태는 더블클릭 팝업(개행 지원), 진행률은 더블클릭 입력. 날짜 컬럼 자동 변환(다양한 형식 → yyyy-MM-dd, 그리드는 yy-MM-dd 축약 표시)
+- **Delete**=선택 범위 값 비우기(`clearSelectedCells` → 배치 저장, 진행률은 0, developer의 계획시작/완료는 스킵) / **Ctrl+C**=선택 범위를 TSV로 클립보드 복사(탭·개행·따옴표 포함 값은 따옴표 인용 → 엑셀에 그대로 붙여넣기) / **Ctrl+V**=선택 위치부터 붙여넣기(`parseClipboardTable`로 인용 해석, 화면 마지막 행을 넘어가면 새 행 추가)
+- 행번호(#) = DB 고유 ID. TID 열 클릭으로 행 복수 선택(클릭/Shift/Ctrl/# 전체) → 일괄 삭제(행 선택 상태의 Delete는 행 삭제). **행 선택과 셀 선택은 배타**. 우클릭 컨텍스트 메뉴(삽입/복제/삭제/행이동 TID)
 - 필터: 빠른검색(2입력 AND) · 완료 포함 · 나만의 · 이번주 · 지연 · 계획시작 우선 (체크 상태·컬럼폭 localStorage 프로젝트별 유지)
 - 정렬: 헤더 `↕` 버튼(asc/desc), TID 헤더 클릭 시 등록순 리셋. 진행률 색상 바(회색→노랑→파랑→초록)
 - SPA 미사용 → 빌드 도구 불필요
@@ -300,6 +305,8 @@ python run.py                     # http://localhost:5000
 
 > 각 항목의 현재 동작 상세는 §6, 스키마는 §4 참조. 아래는 "언제 무엇을 했는가" 요약.
 
+- **2026-08-25** — **기동 시 태스크 알림 중복 발송 수정**: 하루 1회 판정을 메모리(`_sent_today`)에서 DB(`project.task_notify_last_date`, 마이그레이션 017)로 이전 — 재기동해도 그날 발송 이력이 유지된다. 발송시각을 120분(`_CATCHUP_MINUTES`) 넘긴 뒤늦은 발송은 생략하고 처리 완료로 기록. 스케줄러 상태 응답 `sent_today` → `done_today`(+`catchup_minutes`). 테스트 121→125건
+- **2026-08-25** — **그리드 셀 선택·편집을 엑셀 방식으로 전환**: 상시 `contenteditable` 제거 → 클릭=선택, 더블클릭·F2·Enter·문자 입력=편집. 사각형 범위 선택(드래그/Shift/방향키/Ctrl+A), `Delete`로 선택 범위 값 삭제, `Ctrl+C`로 TSV 복사(엑셀 붙여넣기 호환·인용 처리), 붙여넣기는 선택 위치 기준 + TSV 인용 파서 적용. 행 선택(TID 열)은 종전 동작 유지하며 셀 선택과 배타
 - **2026-08-07** — **AI 분석 범위 축소 + 태스크 생성 기능**: ①분석용 요약을 미완료 + (지연 or 향후 4주) 항목으로 제한해 입력 토큰 절감(345건 프로젝트 61%). ②**generate 액션** 신설 — 프로젝트 마일스톤 기준 태스크 일괄 생성(담당자 `AI생성`/공수 2 서버 고정, 마일스톤 시기→영업일 일정 환산, 기존 구분·Task 체계 재사용, 중복·빈 항목 서버 스킵). 프론트 그리드 자동 갱신 + 생성 건수 안내, AI 바 placeholder 문구 갱신. 테스트 112→121건
 - **2026-08-07** — **AI 프로바이더 정리(GEMINI + Claude API)**: Anthropic Messages API 프로바이더 추가(`AI_MODEL=CLAUDE`, `anthropic` SDK, 기본 모델 `claude-opus-5`, `effort=medium`, refusal 처리). 사내 GEMMA(llama.cpp) 경로 및 전용 대응 코드 삭제 — 압축 요약(`_get_compact_summary`)·축약 프롬프트(`_build_compact_system_prompt`)·`id_slot` 전달 제거로 프롬프트 경로 단일화. Claude CLI(LOCAL)는 유지. 테스트 110→112건
 - **2026-08-06** — **그리드 상단바 메뉴 정리**: CSV/Excel 내보내기·Excel 붙여넣기·샘플 다운로드를 '데이터관리' 드롭다운으로 묶고, 유저명·로그아웃을 구분선 오른쪽 그룹으로 분리, 가이드를 제목 옆 원형 `?` 버튼으로 이동(상단 버튼 10개→6개). 이모지 아이콘 → 인라인 SVG 라인 아이콘 교체(아이콘 중복 제거 + 다크 배경 가독성). 워크쓰루 1단계 설명 갱신

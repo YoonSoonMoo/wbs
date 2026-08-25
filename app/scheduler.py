@@ -7,6 +7,10 @@ waitress 단일 프로세스 환경이라 인프로세스 스케줄러로 중복
 시각 비교는 컨테이너 로컬시간(보통 UTC)이 아니라 config.APP_TZ(기본 Asia/Seoul)
 기준으로 수행한다. 컨테이너가 UTC면 '09:00' 설정이 한국시간 18:00에 발송되는
 문제를 막기 위함이다.
+
+하루 1회 판정은 project.task_notify_last_date(DB)로 한다. 메모리 기록은 프로세스가
+재기동되면 초기화되어, 발송시각이 지난 뒤 기동할 때마다 그날 메일을 다시 보냈다.
+또한 발송시각을 _CATCHUP_MINUTES 이상 지난 뒤의 기동에서는 뒤늦은 발송을 하지 않는다.
 """
 import logging
 import os
@@ -26,8 +30,10 @@ from app.services import notification_service
 
 logger = logging.getLogger(__name__)
 
-# 발송 중복 방지: {date: set(project_id)}. 날짜가 바뀌면 정리된다.
-_sent_today = {}
+# 발송시각을 놓친 뒤(서비스 중단 등) 뒤늦게 따라 보낼 수 있는 최대 지연(분).
+# 이 창을 넘긴 기동에서는 그날 알림을 보내지 않고 처리 완료로 기록한다.
+_CATCHUP_MINUTES = 120
+
 _scheduler = None       # 상태 조회용 스케줄러 인스턴스
 _last_tick = None       # 마지막 폴링 시각 (작동 여부 판단용)
 
@@ -83,35 +89,57 @@ def _tick(app):
             logger.exception("태스크 알림 스케줄러 처리 오류")
 
 
+def _to_minutes(hm):
+    """'HH:MM' → 자정 기준 분. 형식이 잘못되면 None."""
+    try:
+        h, m = str(hm).split(':')[:2]
+        return int(h) * 60 + int(m)
+    except (TypeError, ValueError):
+        return None
+
+
+def _mark_done(db, project_id, today):
+    """그날의 알림 처리 완료를 DB에 기록한다 (재기동 후에도 유지)."""
+    db.execute(
+        "UPDATE project SET task_notify_last_date = ? WHERE id = ?", (today, project_id)
+    )
+    db.commit()
+
+
 def _run_due_notifications():
     now = _now()
     if now.weekday() >= 5:  # 토(5)/일(6) 제외 — 평일만
         return
 
-    today = now.date()
-    for d in list(_sent_today):  # 지난 날짜 정리
-        if d != today:
-            del _sent_today[d]
-    sent = _sent_today.setdefault(today, set())
-
-    cur_hm = now.strftime('%H:%M')
+    today = now.strftime('%Y-%m-%d')
+    cur_min = now.hour * 60 + now.minute
     db = get_db()
     rows = db.execute(
-        "SELECT id, name, task_notify_time FROM project WHERE task_notify_enabled = 1"
+        "SELECT id, name, task_notify_time, task_notify_last_date "
+        "FROM project WHERE task_notify_enabled = 1"
     ).fetchall()
 
     for r in rows:
         pid = r['id']
-        if pid in sent:
+        if (r['task_notify_last_date'] or '')[:10] == today:
+            continue  # 오늘 이미 처리 — 재기동해도 다시 보내지 않는다
+        target_min = _to_minutes((r['task_notify_time'] or '09:00')[:5])
+        if target_min is None or cur_min < target_min:
             continue
-        target = (r['task_notify_time'] or '09:00')[:5]
-        if cur_hm >= target:
-            result = notification_service.send_task_update_mails(pid)
-            sent.add(pid)  # 발송 시도 = 하루 1회 (재시도 폭주 방지)
+        if cur_min - target_min > _CATCHUP_MINUTES:
+            # 발송시각을 크게 지난 기동(예: 종일 중단 후 저녁 기동) — 뒤늦은 발송은 생략
+            _mark_done(db, pid, today)
             logger.info(
-                "태스크 알림 발송 project=%s(%s) sent=%s/%s",
-                pid, r['name'], result.get('sent'), result.get('total'),
+                "태스크 알림 건너뜀(발송시각 경과) project=%s(%s) target=%s now=%s",
+                pid, r['name'], r['task_notify_time'], now.strftime('%H:%M'),
             )
+            continue
+        _mark_done(db, pid, today)  # 발송 시도 = 하루 1회 (실패 시 재시도 폭주 방지)
+        result = notification_service.send_task_update_mails(pid)
+        logger.info(
+            "태스크 알림 발송 project=%s(%s) sent=%s/%s",
+            pid, r['name'], result.get('sent'), result.get('total'),
+        )
 
 
 def get_status():
@@ -128,5 +156,15 @@ def get_status():
         'now': _now().isoformat(),
         'last_tick': _last_tick.isoformat() if _last_tick else None,
         'next_run': next_run,
-        'sent_today': {str(d): sorted(s) for d, s in _sent_today.items()},
+        'catchup_minutes': _CATCHUP_MINUTES,
+        'done_today': _done_today_ids(),
     }
+
+
+def _done_today_ids():
+    """오늘 알림 처리(발송 또는 건너뜀)가 끝난 프로젝트 id 목록."""
+    today = _now().strftime('%Y-%m-%d')
+    rows = get_db().execute(
+        "SELECT id FROM project WHERE substr(task_notify_last_date, 1, 10) = ?", (today,)
+    ).fetchall()
+    return [r['id'] for r in rows]
