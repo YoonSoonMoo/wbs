@@ -124,7 +124,6 @@ function renderGrid() {
     var canEdit = (typeof USER_ROLE !== 'undefined' && USER_ROLE !== 'viewer');
     // 계획시작/계획완료는 pl/pm/admin만 수정 가능 (developer 불가)
     var planLocked = canEdit && USER_ROLE === 'developer';
-    var ceAttr = canEdit ? ' contenteditable="true"' : '';
     var editClass = canEdit ? 'editable' : '';
     var canDrag = canEdit && !sortCol && !sv && !sv2 && !showMine && !showThisWeek && !showDelayed && !showPlanStartSort;
 
@@ -148,20 +147,20 @@ function renderGrid() {
         var trClassAttr = trClass.length ? ' class="' + trClass.join(' ') + '"' : '';
         h += '<tr data-idx="' + row._idx + '" data-id="' + (row._id || '') + '"' + trClassAttr + (canEdit ? ' oncontextmenu="showContext(event,' + row._idx + ')"' : '') + '>';
         h += '<td class="row-num"' + (canDrag ? ' draggable="true"' : '') + ' onclick="handleRowSelect(event,' + row._idx + ')">' + (row._idx + 1) + '</td>';
-        h += '<td class="' + editClass + '"' + ceAttr + ' data-col="category">' + esc(row.category) + '</td>';
-        h += '<td class="' + editClass + '"' + ceAttr + ' data-col="task_name">' + esc(row.task_name) + '</td>';
-        h += '<td class="' + editClass + '"' + ceAttr + ' data-col="subtask">' + esc(row.subtask) + '</td>';
+        h += '<td class="' + editClass + '" data-col="category">' + esc(row.category) + '</td>';
+        h += '<td class="' + editClass + '" data-col="task_name">' + esc(row.task_name) + '</td>';
+        h += '<td class="' + editClass + '" data-col="subtask">' + esc(row.subtask) + '</td>';
         h += '<td class="expandable" data-col="detail">' + esc(row.detail) + '</td>';
-        h += '<td class="' + editClass + ' cell-center"' + ceAttr + ' data-col="assignee">' + esc(row.assignee) + '</td>';
+        h += '<td class="' + editClass + ' cell-center" data-col="assignee">' + esc(row.assignee) + '</td>';
         var planAttr = planLocked
-            ? ' class="cell-date plan-locked" onclick="showPlanLockedAlert()" title="계획시작/계획완료는 PM/PL에게 요청하세요"'
-            : ' class="' + editClass + ' cell-date"' + ceAttr;
+            ? ' class="cell-date plan-locked" title="계획시작/계획완료는 PM/PL에게 요청하세요"'
+            : ' class="' + editClass + ' cell-date"';
         h += '<td' + planAttr + ' data-col="plan_start">' + esc(shortDate(row.plan_start)) + '</td>';
         h += '<td' + planAttr + ' data-col="plan_end">' + esc(shortDate(row.plan_end)) + '</td>';
-        h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="actual_start">' + esc(shortDate(row.actual_start)) + '</td>';
-        h += '<td class="' + editClass + ' cell-date"' + ceAttr + ' data-col="actual_end">' + esc(shortDate(row.actual_end)) + '</td>';
-        h += '<td class="' + editClass + ' cell-num"' + ceAttr + ' data-col="effort">' + esc(row.effort) + '</td>';
-        h += '<td class="cell-progress" data-col="progress" data-idx="' + row._idx + '"' + (canEdit ? ' onclick="editProgress(this,' + row._idx + ')"' : '') + '><div class="progress-bar-cell"><div class="progress-bar-bg"><div class="progress-bar-fill" style="width:' + p + '%;background:' + pColor + '"></div></div><span class="progress-val">' + p + '%</span></div></td>';
+        h += '<td class="' + editClass + ' cell-date" data-col="actual_start">' + esc(shortDate(row.actual_start)) + '</td>';
+        h += '<td class="' + editClass + ' cell-date" data-col="actual_end">' + esc(shortDate(row.actual_end)) + '</td>';
+        h += '<td class="' + editClass + ' cell-num" data-col="effort">' + esc(row.effort) + '</td>';
+        h += '<td class="cell-progress" data-col="progress" data-idx="' + row._idx + '"><div class="progress-bar-cell"><div class="progress-bar-bg"><div class="progress-bar-fill" style="width:' + p + '%;background:' + pColor + '"></div></div><span class="progress-val">' + p + '%</span></div></td>';
         h += '<td class="expandable cell-status" data-col="status">' + esc(row.status) + '</td>';
         h += '</tr>';
     }
@@ -169,6 +168,7 @@ function renderGrid() {
     if (typeof applyRemotePresence === 'function') applyRemotePresence();
     updateStats(filtered);
     updateAlerts();
+    applyCellSelection();
     updateSelectionUI();
     document.getElementById('footerRows').textContent = data.length;
 
@@ -323,6 +323,8 @@ function handleRowSelect(e, idx) {
         else selectedRows[idx] = true;
     }
     lastClickedRowIdx = idx;
+    cellSel = null;            // 행 선택과 셀 선택은 배타
+    applyCellSelection();
     applySelectionStyles();
     updateSelectionUI();
 }
@@ -371,7 +373,8 @@ function updateSelectionUI() {
     }
     var info = document.getElementById('selectionInfo');
     if (info) {
-        info.textContent = count > 0 ? count + '개 선택' : '';
+        var cells = selCellCount();
+        info.textContent = count > 0 ? count + '개 선택' : (cells > 1 ? cells + '개 셀 선택' : '');
     }
 }
 
@@ -474,6 +477,261 @@ function shortDate(s) {
     return m ? s.substring(2) : s;
 }
 
+// ===== Cell Selection (엑셀 방식) =====
+// cellSel: 화면에 렌더링된 행 위치(r)와 COLUMNS 인덱스(c)로 표현한 사각형 범위.
+//          r1/c1 = 앵커(활성 셀), r2/c2 = 확장 끝.
+var cellSel = null;
+var isCellDragging = false;
+var editingTd = null;   // 현재 인라인 편집 중인 td
+
+function gridBody() { return document.getElementById('wbsBody'); }
+
+function canEditGrid() { return typeof USER_ROLE !== 'undefined' && USER_ROLE !== 'viewer'; }
+
+function isPlanLockedRole() { return typeof USER_ROLE !== 'undefined' && USER_ROLE === 'developer'; }
+
+function isTypingTarget(el) {
+    if (!el || !el.tagName) return false;
+    var t = el.tagName;
+    return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || el.isContentEditable;
+}
+
+// 0번 셀은 TID(row-num)이므로 컬럼 인덱스에 1을 더한다
+function cellTd(r, c) {
+    var tb = gridBody();
+    var tr = tb && tb.rows[r];
+    return tr ? tr.cells[c + 1] : null;
+}
+
+function rowDataOf(r) {
+    var tb = gridBody();
+    var tr = tb && tb.rows[r];
+    return tr ? (data[parseInt(tr.dataset.idx)] || null) : null;
+}
+
+function selRect() {
+    if (!cellSel) return null;
+    return {
+        r1: Math.min(cellSel.r1, cellSel.r2), r2: Math.max(cellSel.r1, cellSel.r2),
+        c1: Math.min(cellSel.c1, cellSel.c2), c2: Math.max(cellSel.c1, cellSel.c2)
+    };
+}
+
+function selCellCount() {
+    var s = selRect();
+    return s ? (s.r2 - s.r1 + 1) * (s.c2 - s.c1 + 1) : 0;
+}
+
+function activeCellTd() { return cellSel ? cellTd(cellSel.r1, cellSel.c1) : null; }
+
+function applyCellSelection() {
+    var tb = gridBody();
+    if (!tb) return;
+    tb.querySelectorAll('td.cell-selected,td.cell-active').forEach(function(td) {
+        td.classList.remove('cell-selected', 'cell-active');
+    });
+    if (!cellSel) return;
+    var maxR = tb.rows.length - 1, maxC = COLUMNS.length - 1;
+    if (maxR < 0) { cellSel = null; return; }
+    // 필터·정렬로 행 수가 줄어든 경우 범위 보정
+    cellSel.r1 = Math.min(cellSel.r1, maxR); cellSel.r2 = Math.min(cellSel.r2, maxR);
+    cellSel.c1 = Math.min(cellSel.c1, maxC); cellSel.c2 = Math.min(cellSel.c2, maxC);
+    var s = selRect();
+    for (var r = s.r1; r <= s.r2; r++) {
+        for (var c = s.c1; c <= s.c2; c++) {
+            var td = cellTd(r, c);
+            if (td) td.classList.add('cell-selected');
+        }
+    }
+    var active = activeCellTd();
+    if (active) active.classList.add('cell-active');
+}
+
+function setCellSel(r, c) {
+    cellSel = { r1: r, c1: c, r2: r, c2: c };
+    if (getSelectedCount() > 0) clearSelection();   // 행 선택과 배타
+    applyCellSelection();
+    updateSelectionUI();
+}
+
+function extendCellSel(r, c) {
+    if (!cellSel) return;
+    cellSel.r2 = r; cellSel.c2 = c;
+    applyCellSelection();
+    updateSelectionUI();
+}
+
+function clearCellSel() {
+    cellSel = null;
+    applyCellSelection();
+    updateSelectionUI();
+}
+
+function selectAllCells() {
+    var tb = gridBody();
+    if (!tb.rows.length) return;
+    if (getSelectedCount() > 0) clearSelection();
+    cellSel = { r1: 0, c1: 0, r2: tb.rows.length - 1, c2: COLUMNS.length - 1 };
+    applyCellSelection();
+    updateSelectionUI();
+}
+
+function moveCellSel(dr, dc, extend) {
+    var tb = gridBody();
+    var maxR = tb.rows.length - 1, maxC = COLUMNS.length - 1;
+    if (maxR < 0) return;
+    if (!cellSel) { setCellSel(0, 0); return; }
+    var r = Math.max(0, Math.min(maxR, (extend ? cellSel.r2 : cellSel.r1) + dr));
+    var c = Math.max(0, Math.min(maxC, (extend ? cellSel.c2 : cellSel.c1) + dc));
+    if (extend) extendCellSel(r, c);
+    else setCellSel(r, c);
+    var td = cellTd(r, c);
+    if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+// ----- 마우스: 클릭 = 선택, 드래그 = 범위 확장 -----
+document.addEventListener('mousedown', function(e) {
+    if (!e.target.closest) return;
+    var td = e.target.closest('#wbsBody td[data-col]');
+    if (!td || td === editingTd) return;   // 편집 중인 셀 내부는 캐럿 이동 허용
+    var tr = td.closest('tr');
+    var c = COLUMNS.indexOf(td.dataset.col);
+    if (!tr || c < 0) return;
+    var r = tr.sectionRowIndex;
+    if (editingTd) editingTd.blur();
+    e.preventDefault();   // 브라우저 텍스트 드래그 선택 방지
+    var ae = document.activeElement;
+    if (ae && ae !== document.body && ae.blur) ae.blur();
+    if (e.button === 2) {
+        // 우클릭: 선택 범위 밖이면 그 셀만 선택
+        var s = selRect();
+        if (!s || r < s.r1 || r > s.r2 || c < s.c1 || c > s.c2) setCellSel(r, c);
+        return;
+    }
+    if (e.button !== 0) return;
+    if (e.shiftKey && cellSel) extendCellSel(r, c);
+    else setCellSel(r, c);
+    isCellDragging = true;
+});
+
+document.addEventListener('mouseover', function(e) {
+    if (!isCellDragging || !e.target.closest) return;
+    var td = e.target.closest('#wbsBody td[data-col]');
+    if (!td) return;
+    var tr = td.closest('tr');
+    var c = COLUMNS.indexOf(td.dataset.col);
+    if (!tr || c < 0) return;
+    extendCellSel(tr.sectionRowIndex, c);
+});
+
+document.addEventListener('mouseup', function() { isCellDragging = false; });
+
+// ----- 편집 진입/취소 -----
+function enterCellEdit(td, initialChar) {
+    if (!td) return;
+    var tr = td.closest('tr');
+    if (!tr) return;
+    var idx = parseInt(tr.dataset.idx), col = td.dataset.col;
+    if (!data[idx]) return;
+    // 세부항목·진행상태: 팝업 편집기 (viewer는 읽기 전용으로 열림)
+    if (td.classList.contains('expandable')) { showExpandedEditor(td); return; }
+    if (!canEditGrid()) return;
+    if (td.classList.contains('plan-locked')) { showPlanLockedAlert(); return; }
+    if (col === 'progress') { editProgress(td, idx); return; }
+    if (!td.classList.contains('editable')) return;
+    editingTd = td;
+    td.setAttribute('contenteditable', 'true');
+    td.focus();   // focusin 핸들러가 날짜 셀의 원본값을 채운다
+    if (initialChar != null) {
+        td.textContent = initialChar;
+        var range = document.createRange();
+        range.selectNodeContents(td);
+        range.collapse(false);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+    } else {
+        window.getSelection().selectAllChildren(td);
+    }
+}
+
+// 값을 되돌린 뒤 blur → focusout 커밋 로직이 변경 없음으로 판단
+function cancelCellEdit() {
+    var td = editingTd;
+    if (!td) return;
+    var tr = td.closest('tr');
+    var idx = tr ? parseInt(tr.dataset.idx) : -1, col = td.dataset.col;
+    var raw = data[idx] ? (data[idx][col] || '') : '';
+    td.textContent = DATE_COLS.indexOf(col) >= 0 ? shortDate(raw) : raw;
+    td.blur();
+}
+
+// ----- Delete: 선택 범위 값 삭제 -----
+function clearSelectedCells() {
+    if (!canEditGrid()) return;
+    var s = selRect();
+    if (!s) return;
+    var changed = 0, locked = 0;
+    for (var r = s.r1; r <= s.r2; r++) {
+        var row = rowDataOf(r);
+        if (!row) continue;
+        for (var c = s.c1; c <= s.c2; c++) {
+            var col = COLUMNS[c];
+            if (isPlanLockedRole() && (col === 'plan_start' || col === 'plan_end')) { locked++; continue; }
+            var empty = col === 'progress' ? '0' : '';
+            if (row[col] !== empty) { row[col] = empty; changed++; }
+        }
+    }
+    if (locked) showPlanLockedAlert();
+    if (!changed) return;
+    saveBatch();
+    renderGrid();
+    showToast(changed + '개 셀의 값을 삭제했습니다.', 'success');
+}
+
+// ----- Ctrl+C: 선택 범위를 TSV로 클립보드에 복사 (엑셀 붙여넣기 호환) -----
+function copySelectedCells() {
+    var s = selRect();
+    if (!s) return;
+    var lines = [], cols = s.c2 - s.c1 + 1;
+    for (var r = s.r1; r <= s.r2; r++) {
+        var row = rowDataOf(r);
+        if (!row) continue;
+        var cells = [];
+        for (var c = s.c1; c <= s.c2; c++) cells.push(tsvValue(row[COLUMNS[c]] || ''));
+        lines.push(cells.join('\t'));
+    }
+    if (!lines.length) return;
+    writeClipboard(lines.join('\r\n'), lines.length * cols);
+}
+
+// 탭·개행·따옴표가 포함된 값은 엑셀 TSV 규칙대로 따옴표로 감싼다
+function tsvValue(v) {
+    v = String(v);
+    return /[\t\r\n"]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+
+function writeClipboard(text, count) {
+    function done() { showToast(count + '개 셀을 복사했습니다.', 'success'); }
+    function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (err) {}
+        ta.remove();
+        if (ok) done();
+        else showToast('클립보드 복사에 실패했습니다.', 'error');
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+        fallback();
+    }
+}
+
 // ===== Cell Editing =====
 var saveTimer = null;
 
@@ -502,61 +760,122 @@ document.addEventListener('focusout', function(e) {
             if (col === 'progress') renderGrid();
         }
     }
+    if (e.target === editingTd) {
+        editingTd = null;
+        e.target.removeAttribute('contenteditable');
+    }
 });
 
 document.addEventListener('keydown', function(e) {
-    if (e.target.classList.contains('editable')) {
-        if (e.key === 'Tab') {
-            e.preventDefault();
-            var n = e.shiftKey ? e.target.previousElementSibling : e.target.nextElementSibling;
-            if (n && n.classList.contains('editable')) { n.focus(); window.getSelection().selectAllChildren(n); }
-        }
-        if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+    // 1) 셀 편집 중
+    if (editingTd && e.target === editingTd) {
+        if (e.key === 'Escape') { e.preventDefault(); cancelCellEdit(); }
+        else if (e.key === 'Enter') { e.preventDefault(); editingTd.blur(); moveCellSel(1, 0, false); }
+        else if (e.key === 'Tab') { e.preventDefault(); editingTd.blur(); moveCellSel(0, e.shiftKey ? -1 : 1, false); }
         return;
     }
-    // Selection shortcuts (when not editing a cell)
+    // 2) 검색창 등 일반 입력 요소에서는 관여하지 않음
+    if (isTypingTarget(e.target)) return;
+    // 3) 셀 선택 상태 (엑셀 방식 이동/삭제/복사)
+    if (cellSel) {
+        var k = e.key;
+        if (k === 'ArrowUp')    { e.preventDefault(); moveCellSel(-1, 0, e.shiftKey); return; }
+        if (k === 'ArrowDown')  { e.preventDefault(); moveCellSel(1, 0, e.shiftKey); return; }
+        if (k === 'ArrowLeft')  { e.preventDefault(); moveCellSel(0, -1, e.shiftKey); return; }
+        if (k === 'ArrowRight') { e.preventDefault(); moveCellSel(0, 1, e.shiftKey); return; }
+        if (k === 'Tab')        { e.preventDefault(); moveCellSel(0, e.shiftKey ? -1 : 1, false); return; }
+        if (k === 'Home')       { e.preventDefault(); moveCellSel(0, -COLUMNS.length, e.shiftKey); return; }
+        if (k === 'End')        { e.preventDefault(); moveCellSel(0, COLUMNS.length, e.shiftKey); return; }
+        if (k === 'Escape')     { e.preventDefault(); clearCellSel(); return; }
+        if (k === 'Enter' || k === 'F2') { e.preventDefault(); enterCellEdit(activeCellTd()); return; }
+        if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); clearSelectedCells(); return; }
+        if (e.ctrlKey || e.metaKey) {
+            if (k === 'c' || k === 'C') { e.preventDefault(); copySelectedCells(); return; }
+            if (k === 'a' || k === 'A') { e.preventDefault(); selectAllCells(); return; }
+            return;   // Ctrl+V 등은 기본 동작(paste 이벤트)에 맡긴다
+        }
+        if (e.altKey) return;
+        // 한글 등 IME 입력 시작: 편집 모드만 열고 조합은 브라우저에 맡긴다
+        if (k === 'Process' || e.keyCode === 229) { enterCellEdit(activeCellTd()); return; }
+        if (k.length === 1) { e.preventDefault(); enterCellEdit(activeCellTd(), k); return; }
+        return;
+    }
+    // 4) 행 선택 단축키 (TID 열로 선택한 경우)
     if (e.key === 'Escape') clearSelection();
     if (e.key === 'Delete' && getSelectedCount() > 0) deleteSelectedRows();
 });
 
-// ===== Paste in cell =====
+// ===== Paste (셀 선택 위치부터 붙여넣기) =====
 document.addEventListener('paste', function(e) {
     if (USER_ROLE === 'viewer') return;
-    var a = document.activeElement;
-    if (a && a.classList.contains('editable')) {
-        var t = (e.clipboardData || window.clipboardData).getData('text');
-        if (t.indexOf('\t') >= 0 || (t.indexOf('\n') >= 0 && t.trim().split('\n').length > 1)) {
-            e.preventDefault();
-            pasteIntoGrid(t, a);
-        }
+    var t = (e.clipboardData || window.clipboardData).getData('text');
+    if (!t) return;
+    var multi = t.indexOf('\t') >= 0 || t.trim().split('\n').length > 1;
+    // 편집 중인 셀: 단일 값은 평문 삽입, 다중 셀은 그리드 붙여넣기
+    if (editingTd && document.activeElement === editingTd) {
+        e.preventDefault();
+        if (!multi) { document.execCommand('insertText', false, t); return; }
+        var er = editingTd.closest('tr').sectionRowIndex;
+        var eci = COLUMNS.indexOf(editingTd.dataset.col);
+        cancelCellEdit();   // 편집 중 값은 버리고 붙여넣기 값으로 대체
+        pasteIntoGrid(t, er, eci < 0 ? 0 : eci);
+        return;
     }
+    var s = selRect();
+    if (!s) return;
+    e.preventDefault();
+    pasteIntoGrid(t, s.r1, s.c1);
 });
 
-function pasteIntoGrid(text, cell) {
-    var rows = text.split('\n');
-    var rr = [];
-    for (var i = 0; i < rows.length; i++) { if (rows[i].trim()) rr.push(rows[i]); }
-    var tr = cell.closest('tr');
-    var si = parseInt(tr.dataset.idx);
+// startRow: 렌더링된 행 위치, startCol: COLUMNS 인덱스
+function pasteIntoGrid(text, startRow, startCol) {
+    var rr = parseClipboardTable(text);
+    if (!rr.length) return;
+    var tb = gridBody();
     var co = COLUMNS;
-    var sci = co.indexOf(cell.dataset.col); if (sci < 0) sci = 0;
+    var sci = startCol > 0 ? startCol : 0;
     for (var i = 0; i < rr.length; i++) {
-        var cells = rr[i].split('\t');
-        var di = si + i;
-        while (di >= data.length) {
-            data.push({ _id: null, category: '', task_name: '', subtask: '', detail: '', assignee: '', plan_start: '', plan_end: '', actual_start: '', actual_end: '', effort: '', progress: '0', status: '' });
-        }
+        var cells = rr[i];
+        var tr = tb.rows[startRow + i];
+        var target = tr ? data[parseInt(tr.dataset.idx)] : null;
+        if (!target) { target = newRow(); data.push(target); }   // 마지막 행을 넘어가면 새 행 추가
         for (var j = 0; j < cells.length; j++) {
             var ci = sci + j;
             if (ci < co.length) {
                 var val = cells[j].trim();
                 if (DATE_COLS.indexOf(co[ci]) >= 0) val = parseDate(val);
-                data[di][co[ci]] = val;
+                target[co[ci]] = val;
             }
         }
     }
     saveBatch();
     renderGrid();
+}
+
+// 엑셀 클립보드 TSV 파싱: 따옴표로 감싼 값 안의 탭·개행을 보존한다
+function parseClipboardTable(text) {
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    var rows = [], row = [], val = '', inQuote = false;
+    for (var i = 0; i < text.length; i++) {
+        var ch = text[i];
+        if (inQuote) {
+            if (ch === '"') {
+                if (text[i + 1] === '"') { val += '"'; i++; }
+                else inQuote = false;
+            } else val += ch;
+            continue;
+        }
+        if (ch === '"' && val === '') inQuote = true;
+        else if (ch === '\t') { row.push(val); val = ''; }
+        else if (ch === '\n') { row.push(val); rows.push(row); row = []; val = ''; }
+        else val += ch;
+    }
+    row.push(val);
+    rows.push(row);
+    // 값이 전혀 없는 행은 제외 (끝에 붙은 개행 등)
+    return rows.filter(function(r) {
+        return r.some(function(v) { return v.trim() !== ''; });
+    });
 }
 
 // ===== Sort =====
@@ -944,12 +1263,13 @@ function editProgress(td, idx) {
 }
 
 // ===== Expanded Editor (detail, status) =====
+// 더블클릭 = 편집 진입 (엑셀과 동일). 셀 종류에 따라 편집기를 분기한다.
 document.addEventListener('dblclick', function(e) {
-    var td = e.target.closest('td.expandable');
-    if (!td) return;
+    var td = e.target.closest ? e.target.closest('#wbsBody td[data-col]') : null;
+    if (!td || td === editingTd) return;
     e.preventDefault();
     window.getSelection().removeAllRanges();
-    showExpandedEditor(td);
+    enterCellEdit(td);
 });
 
 function showExpandedEditor(td) {

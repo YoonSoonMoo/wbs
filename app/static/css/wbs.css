@@ -133,7 +133,12 @@ tbody tr:nth-child(odd){background:var(--bg-row);}
 tbody tr:hover{background:var(--bg-row-hover);}
 tbody td{padding:0 8px;border-right:1px solid var(--border-light);border-bottom:1px solid var(--border-light);font-size:var(--font-size);color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:var(--row-height);height:var(--row-height);line-height:var(--row-height);}
 tbody td:last-child{border-right:none;}
-tbody td.editable{cursor:text;}
+tbody td.editable{cursor:cell;}
+/* 엑셀 방식 셀 선택 */
+#wbsBody td[data-col]{user-select:none;}
+#wbsBody td[contenteditable="true"]{user-select:text;cursor:text;}
+#wbsBody td.cell-selected{background:rgba(37,99,235,.14);}
+#wbsBody td.cell-active{box-shadow:inset 0 0 0 2px var(--accent-blue);}
 tbody td.editable:focus{outline:2px solid var(--accent-blue);outline-offset:-2px;background:#eff4ff;}
 tbody td.cell-center{text-align:center;}
 tbody td.cell-num{text-align:center;font-family:var(--font-mono);font-size:11px;}
