@@ -7,7 +7,7 @@
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성/관리하는 도구 |
 | 저장소 | origin: https://github.com/YoonSoonMoo/wbs.git · gitea(미러): https://gitea.daou.co.kr/yoonsm/wbs.git |
-| 기간 | 2026-04-10 최초 구축 ~ 2026-08-07 최신. 상세 변경 이력은 **§8 변경 이력** 참조 |
+| 기간 | 2026-04-10 최초 구축 ~ 2026-08-26 최신. 상세 변경 이력은 **§8 변경 이력** 참조 |
 
 ## 2. 기술 스택
 
@@ -19,12 +19,15 @@
 | Frontend | Jinja2 + Vanilla JS | | 서버 렌더링 + AJAX 하이브리드 |
 | Font | Noto Sans KR + JetBrains Mono | | Google Fonts CDN |
 | Excel | openpyxl | 3.1.5 | Excel Import/Export |
-| LLM SDK | openai / anthropic | 1.59.6 / 0.120.2 | AI 어시스턴트 (GEMINI / CLAUDE 프로바이더) |
+| LLM SDK | openai / anthropic | 1.59.6 / 0.120.2 | AI 어시스턴트 — openai=GEMINI·DAOU_GATEWAY, anthropic=CLAUDE |
 | Gantt | Frappe Gantt | 0.6.1 | 로컬 번들 (한국어 로케일 패치) |
 | Chart | Chart.js | 4.4.1 | CDN, 통계 모달 차트 (도넛, 라인) |
+| 스케줄러 | APScheduler | 3.10.4 | 태스크 갱신 알림 백그라운드 발송 |
+| HTTP | requests | 2.34.2 | 메일 발송(NCP API) 호출 |
 | 환경변수 | python-dotenv | 1.1.0 | |
-| WSGI | waitress | 3.0.2 | Windows 프로덕션 서버 |
-| Test | pytest | 8.3.5 | |
+| WSGI | waitress | 3.0.2 | 로컬 Windows · Docker 공통 프로덕션 서버 |
+| 배포 | Docker + Coolify | | `Dockerfile`(python:3.11-slim, TZ=Asia/Seoul) + `docker-compose.yaml` |
+| Test | pytest | 8.3.5 | 128건 |
 
 ## 3. 디렉토리 구조
 
@@ -45,6 +48,7 @@ wbs/
 │   │   ├── wbs_code_service.py  # WBS 코드 자동생성/재계산 로직
 │   │   ├── auth_service.py      # 인증 서비스 (register, login, get_project_role, API 토큰 등)
 │   │   ├── dashboard_service.py # 대시보드 통계 (카테고리별, 담당자별, 지연업무)
+│   │   ├── backup_service.py    # DB 백업/복원 (sqlite backup API 스냅샷, 복원 시 마이그레이션 자동 적용)
 │   │   ├── ai_assistant.py      # AI 어시스턴트 (멀티 프로바이더 LLM, 자연어 → WBS CRUD/move)
 │   │   ├── import_export.py     # CSV/Excel Import/Export
 │   │   ├── mail_service.py      # 메일 발송 (NCP API) + HTML 빌더 (지연 알림/이번주 갱신요청)
@@ -57,6 +61,7 @@ wbs/
 │   │   ├── api_project.py       # 프로젝트 REST API (/api/projects)
 │   │   ├── api_wbs.py           # WBS REST API (/api/wbs, SSE /events·/editing 포함)
 │   │   ├── api_users.py         # 유저 관리 REST API (/api/users, admin 전용)
+│   │   ├── api_admin.py         # 시스템 백업/복원 API (/api/admin, admin 전용)
 │   │   └── api_import_export.py # Import/Export API (/api/io)
 │   ├── static/
 │   │   ├── css/                 # style.css(대시보드/랜딩/인증), wbs.css(그리드), frappe-gantt.min.css
@@ -75,12 +80,19 @@ wbs/
 │       ├── index.html           # 대시보드 페이지 (/dashboard)
 │       ├── wbs.html             # WBS 그리드 뷰 (독립 페이지, 상단바 메뉴, 역할별 UI 게이팅)
 │       └── gantt.html           # Gantt 차트 뷰 (viewer 접근 차단)
-├── migrations/                  # NNN_*.sql 버전드 마이그레이션 (001~016, §4 참조)
+├── migrations/                  # NNN_*.sql 버전드 마이그레이션 (001~017, §4 참조)
+├── certs/                       # daou-root.pem(사내 루트 CA, 커밋) / ca-bundle.pem(결합본, gitignore)
+├── scripts/make_ca_bundle.py    # certifi + 사내 CA 결합 번들 생성 (SSL_CERT_FILE용, §6 AI 참조)
 ├── instance/                    # SQLite DB 파일 (자동 생성, gitignore)
-├── tests/                       # pytest API 테스트 스위트 (conftest + 10개 파일, 121건)
+├── tests/                       # pytest 테스트 스위트 (conftest + 10개 파일, 128건)
 ├── skills/wbs-report/           # Claude CLI 연동 스킬 (env.json은 토큰 포함 gitignore)
-├── template/wbs-manage.html     # UI 레퍼런스 원본 (단독 HTML, localStorage 기반, 실사용 안 함)
+├── template/                    # UI·스크립트 레퍼런스 원본 (wbs-manage.html 등, 실사용 안 함)
+├── Dockerfile                   # python:3.11-slim + tzdata(KST) + waitress-serve
+├── docker-compose.yaml          # Coolify 배포용 (env_file .env, wbs-data 볼륨, healthcheck)
+├── requirements.txt             # 의존성
 ├── run.py                       # 실행 진입점
+├── README.md                    # 공개용 소개 문서
+├── CLAUDE.md                    # Claude Code 작업 지침 (요약 + 이 문서 참조)
 └── handoff.md                   # 이 문서
 ```
 
@@ -168,7 +180,7 @@ wbs/
 - 인덱스: `idx_wbs_project`, `idx_wbs_parent`, `idx_wbs_code(project_id, wbs_code)`, `idx_wbs_assignee`, `idx_wbs_sort(parent_id, sort_order)`
 
 ### 마이그레이션 목록 (`migrations/`)
-`001_initial`(project/wbs_item) · `002_auth`(user/project_member) · `003_stats`(updated_by/completed_at/트리거) · `004_user_mgmt`(is_active, participant→developer) · `005_password_reset`(강제 변경 플래그) · `006_member_admin_role`(role CHECK 확장) · `007_remove_admin_members` · `008_unify_user_role`(권한 단일관리) · `009_normalize_dates`(YY-MM-DD 정정) · `010_change_history` · `011_project_history_flag` · `012_project_notice` · `013_api_token` · `014_task_notify` · `015_pm_pl_roles`(project_member.role CHECK를 pm/pl 포함으로 확장) · `016_collapse_global_role`(전역 role viewer→developer 통일)
+`001_initial`(project/wbs_item) · `002_auth`(user/project_member) · `003_stats`(updated_by/completed_at/트리거) · `004_user_mgmt`(is_active, participant→developer) · `005_password_reset`(강제 변경 플래그) · `006_member_admin_role`(role CHECK 확장) · `007_remove_admin_members` · `008_unify_user_role`(권한 단일관리) · `009_normalize_dates`(YY-MM-DD 정정) · `010_change_history` · `011_project_history_flag` · `012_project_notice` · `013_api_token` · `014_task_notify` · `015_pm_pl_roles`(project_member.role CHECK를 pm/pl 포함으로 확장) · `016_collapse_global_role`(전역 role viewer→developer 통일) · `017_task_notify_last_date`(알림 발송일 기록 컬럼)
 
 ## 5. API 엔드포인트
 
@@ -185,22 +197,24 @@ wbs/
 ### 프로젝트 API (`/api/projects`)
 | Method | URL | 설명 |
 |--------|-----|------|
-| GET/POST | `/api/projects` | 목록 / 생성 |
-| GET/PUT/DELETE | `/api/projects/<id>` | 상세 / 수정 / 삭제(admin) |
-| PATCH | `/api/projects/<id>/history-flag` | 변경 이력 ON/OFF (admin, body `{enabled}`) |
+| GET/POST | `/api/projects` | 목록(로그인) / 생성(**admin**) |
+| GET/PUT/DELETE | `/api/projects/<id>` | 상세(로그인) / 수정·삭제(**pm 이상**) |
+| PATCH | `/api/projects/<id>/history-flag` | 변경 이력 ON/OFF (**pm 이상**, body `{enabled}`) |
 | GET | `/api/projects/<id>/members` · `/api/projects/users` | 멤버 목록 / 전체 사용자 |
+| GET | `/api/projects/scheduler/status` | 태스크 알림 스케줄러 상태 (admin) |
 
 ### WBS API (`/api/wbs`)
 | Method | URL | 설명 |
 |--------|-----|------|
 | GET/POST | `/api/wbs/<pid>/items` | 목록(?mode=flat/tree) / 추가 |
 | GET/PUT/PATCH/DELETE | `/api/wbs/items/<id>` | 상세 / 전체수정 / 부분수정(인라인) / 삭제(재귀) |
+| — | (항목 단위 라우트) | URL에 project_id가 없어 데코레이터 대신 `_check_item_write()`가 항목→프로젝트를 역추적해 권한 검사 |
 | POST | `/api/wbs/items/<id>/move` | 항목 이동 (parent_id, sort_order) |
 | POST | `/api/wbs/<pid>/items/batch` | 일괄 수정 |
-| DELETE | `/api/wbs/<pid>/items` | WBS 전체 초기화 (developer 이상) |
+| DELETE | `/api/wbs/<pid>/items` | WBS 전체 초기화 (**pm 이상**) |
 | GET | `/api/wbs/<pid>/stats` · `/delayed` · `/dashboard` · `/schedule-gaps` | 통계 / 지연목록 / 종합 / 계획vs실제 갭 |
 | GET | `/api/wbs/<pid>/weekly-stats` | 주간 진척 통계 (?weeks=4) |
-| POST | `/api/wbs/<pid>/send-delay-mail` · `/send-task-update-mail` | 지연/갱신요청 메일 발송 (admin) |
+| POST | `/api/wbs/<pid>/send-delay-mail` · `/send-task-update-mail` | 지연/갱신요청 메일 발송 (**pm 이상**) |
 | POST | `/api/wbs/<pid>/ai` | AI 어시스턴트 자연어 질의 (조회/추가/**마일스톤 기반 생성**/삭제/수정/이동, pl 이상) |
 | GET | `/api/wbs/<pid>/history` | 변경 이력 조회 (developer 이상, `?limit&offset`) |
 | **GET** | **`/api/wbs/<pid>/events`** | **SSE 실시간 변경 스트림 (viewer 이상 구독)** |
@@ -215,6 +229,12 @@ wbs/
 | PUT | `/api/users/me/password` | 본인 비밀번호 변경 (강제 플래그 해제) |
 | GET | `/api/users/me` | 현재 인증 주체 `{id,name,email,role}` (담당자 식별용, 로그인 유저 전체) |
 | POST/DELETE | `/api/users/<id>/api-token` | API 토큰 발급(이메일 전송)/폐기 (admin) |
+
+### 시스템 관리 API (`/api/admin`, admin 전용)
+| Method | URL | 설명 |
+|--------|-----|------|
+| GET | `/api/admin/backup` | DB 스냅샷 다운로드 (sqlite backup API — WAL 상태와 무관하게 정합성 보장) |
+| POST | `/api/admin/restore` | 백업 파일 업로드 복원 (유효성 검증 후 교체, 구버전이면 마이그레이션 자동 적용) |
 
 ### Import/Export API (`/api/io`)
 | Method | URL | 설명 |
@@ -257,19 +277,43 @@ wbs/
 - **그리드 자동 갱신** (`grid.js`): `EventSource`로 구독. **본인 변경은 무시**(updated_by === USER_NAME). 셀 편집 중이면 즉시 덮어쓰지 않고 "지금 갱신" 배너 표시 후 편집 종료 시 반영(클로버링 방지)
 - **셀 편집 presence**: `POST /editing`(DB 무접근, 브로커로만 전파)로 편집 시작/종료 신호. 다른 사용자가 편집 중인 셀에 **편집자별 색상 외곽선 + 이름 배지** 표시. 6초 하트비트 / 15초 만료 / `pagehide` sendBeacon으로 표시 잔류 방지. `<tr>`에 `data-id`로 재렌더 후에도 복원. 인라인 편집 셀 대상(세부항목/진행상태 팝업·진행률 입력은 제외)
 
-### AI 어시스턴트: 멀티 프로바이더 LLM (GEMINI / CLAUDE / LOCAL)
-- `_call_llm()`이 `.env`의 `AI_MODEL`에 따라 분기 (SDK import는 모두 지연 로딩 — 미사용 프로바이더 환경 무방):
-    - **GEMINI** → OpenAI 호환 엔드포인트 (`openai` SDK, `AI_BASE_URL`+`/v1`·`AI_API_KEY`·`AI_MODEL_NAME`, temperature=0, max_tokens=2048). BASE_URL 미설정 시 Google 호환 엔드포인트 기본
-    - **CLAUDE** → Anthropic Messages API (`anthropic` SDK, `AI_API_KEY`·`AI_MODEL_NAME`(미설정 시 `claude-opus-5`), max_tokens=16000)
-    - **LOCAL** → `claude -p --max-turns 1` subprocess 동기 호출 (timeout 120초). **API 키 불필요** — 서버 머신에 로그인된 Claude CLI 구독을 사용하므로 호출당 API 과금이 없다. 실측 응답 8~35초(질의 복잡도에 비례)
-- **CLAUDE 경로 주의점**: Claude 4.7 이후 모델은 **`temperature`/`top_p` 미지원(400)** → 추론 깊이는 `output_config={"effort": "medium"}`로 조절. thinking이 기본 ON이며 `max_tokens`를 함께 소비하므로 여유를 크게(16000) 둔다. `stop_reason == 'refusal'`이면 `content`를 읽지 않고 오류로 변환(안전 분류기 거부 시 빈 배열이라 인덱싱하면 크래시)
-- `process_command()`이 진입점 → `_execute_query/add/generate/delete/update/move()` 선택 실행. 조회는 `ids`+`display` 반환해 그리드 필터 표시
-- **분석 대상 축소(입력 토큰 억제)**: `_get_items_summary()`가 전체 행을 나열하지 않고 **①완료(진행률 100) 제외 ②계획기간이 오늘~4주(`_ANALYSIS_WINDOW_DAYS=28`) 창을 벗어난 미래 항목 제외**. 단 **기한 경과 미완료(지연)는 창 밖이어도 포함**(분석의 핵심). 전체 건수·완료 수는 헤더 집계로 남겨 맥락 유지, 프롬프트에 "목록은 전체가 아니다"를 명시해 LLM이 "없다"고 단정하지 않게 함. query 필터는 `_execute_query`가 전체 데이터로 실행하므로 **조회 정확도는 불변**
-    - 실측 절감: 345건(완료 139) 프로젝트 35.6K자→14.2K자(**61%**). 단 **지연 항목이 많으면 절감폭이 작다**(173건·완료 18건 프로젝트는 10%) — 지연은 제외 대상이 아니기 때문
-- **generate 액션**(마일스톤 기반 태스크 일괄 생성): 프로젝트 `description`의 마일스톤을 근거로 여러 건 생성. 기존 Task가 있으면 `구분`/`Task`/`서브태스크`를 **그대로 복사**하고 새 `세부항목`만 작성. 담당자 `AI생성`·공수 `2`·진행률 `0`은 **서버 고정**(LLM 값 무시). 일정은 마일스톤 시기("8월 3주")를 LLM이 날짜로 환산하고, 시기 언급이 없으면 서버가 오늘 기준 영업일로 채움(`_next_business_day`/`_add_business_days`로 토·일 배제). 한 번에 최대 30건
-    - **LLM 오류 방어 2중**: ①프롬프트에 기존 Task 재사용 few-shot 예시 + "category에 마일스톤명 금지" 명시 ②서버가 `task_name`/`detail` 빈 항목과 (구분·Task·서브태스크·세부항목) 완전 중복 항목을 스킵(`skipped` 카운트로 반환). 실제로 LOCAL 모델이 category 자리에 마일스톤명을 넣고 task_name을 비우는 실수를 반복해 추가한 장치
-- **move 액션**: TID(행번호) 기준 순서 이동(`source_row/target_row/position`). parent_id 불변. viewer 403
-- **동시성 제약**: LOCAL(CLI subprocess)만 순차 처리(120초×N 대기 가능). GEMINI/CLAUDE(HTTP)는 해당 없음. `app.run(threaded=True)`로 단기 완화
+### AI 어시스턴트: 멀티 프로바이더 LLM
+
+`_call_llm()`이 `.env`의 `AI_MODEL`로 분기한다. **SDK import는 전부 함수 안 지연 로딩** — 미사용 프로바이더가 설치되지 않은 환경에서도 무방.
+
+| `AI_MODEL` | 호출 경로 | 필요한 설정 | 파라미터 |
+|---|---|---|---|
+| `GEMINI` | OpenAI 호환 엔드포인트 (`openai` SDK) | `AI_API_KEY` · `AI_MODEL_NAME` · `AI_BASE_URL`(미설정 시 Google 호환 엔드포인트) | temperature=0, max_tokens=2048 |
+| `DAOU_GATEWAY` | 사내 AI Gateway — OpenAI 호환이라 `_call_openai_compatible()` 재사용 | `AI_API_KEY` · `AI_BASE_URL`(기본 `https://dev-llmgw.daouax.com/v1`) · `AI_MODEL_NAME`(기본 `claude-sonnet-5`) | temperature=0, max_tokens=16000, **기능 태그 필수** |
+| `CLAUDE` | Anthropic Messages API (`anthropic` SDK) | `AI_API_KEY` · `AI_MODEL_NAME`(기본 `claude-opus-5`) | max_tokens=16000, `effort=medium`, **temperature 금지** |
+| `LOCAL` | `claude -p --max-turns 1` subprocess (timeout 120초) | 없음 — 서버 머신에 로그인된 Claude CLI 구독 사용 | 호출당 API 과금 없음. 실측 8~35초 |
+
+**DAOU_GATEWAY 주의점**
+- **기능 태그 필수** — 모든 호출에 `metadata.tags`로 **정확히 1개**(`WBS_AI_ASSISTANT`). 누락·빈 리스트·2개 이상은 게이트웨이가 **400**으로 거절. 기능별 사용량·비용 집계 키다
+- **반드시 `extra_body`로 전달** — 파이썬 OpenAI SDK는 표준 외 필드를 **조용히 버려** body 최상위에 넣으면 서버까지 가지 않는다 (curl은 반대로 최상위에 넣고 `extra_body`라는 키를 쓰면 안 됨)
+- **`temperature=0` 사용 가능** — CLAUDE 직접 호출은 4.7+ 모델에서 400이지만 **게이트웨이 경유 시엔 `claude-sonnet-5`도 정상 수용**(실호출 확인). 프로바이더별 분기 불필요
+- **사내 TLS 인터셉션 대응 필수** — 사내망은 자체 루트 CA(`C=KR, O=daou, CN=daou`, 2044-01 만료)로 TLS를 가로챈다. curl은 Windows 인증서 저장소를 써서 통과하지만 **httpx/OpenAI SDK는 certifi 번들만 보므로 `CERTIFICATE_VERIFY_FAILED`** — SDK가 `Connection error.`로 감싸 원인이 드러나지 않는다. `python scripts/make_ca_bundle.py`로 결합 번들을 만들고 `.env`에 `SSL_CERT_FILE=certs/ca-bundle.pem` 지정. `certs/daou-root.pem`(공개 인증서)만 커밋하고 결합본은 gitignore. **certifi 업그레이드 시 번들 재생성 필요**
+- **방화벽** — 사내망 로컬 PC는 바로 접근 가능하나 **앱 구동 서버는 별도 결재 필요**(`dev-llmgw.daouax.com` TCP 443). Docker 배포 시엔 이미지에 CA를 넣거나 같은 번들을 마운트해야 한다
+- 키 alias `fulfillment-dev` / 허용 모델 그룹 `text-models` / 차단 한도 없음(월 $200 초과 시 알림, 팀 공통 $500 소진 시 429). 모델 목록은 `GET /v1/models`
+
+**CLAUDE 주의점** — Claude 4.7 이후 모델은 **`temperature`/`top_p` 미지원(400)**이라 추론 깊이는 `output_config={"effort": "medium"}`로 조절한다. thinking이 기본 ON이며 `max_tokens`를 함께 소비하므로 여유를 크게(16000) 둔다. `stop_reason == 'refusal'`이면 `content`를 읽지 않고 오류로 변환(안전 분류기 거부 시 빈 배열이라 인덱싱하면 크래시)
+
+**처리 흐름** — `process_command()`가 진입점. 프로젝트 개요 + WBS 요약으로 시스템 프롬프트를 조립해 LLM에 넘기고, 돌아온 JSON의 `action`에 따라 `_execute_query/add/generate/delete/update/move()`를 실행한다. **DB 조작은 전부 서버 코드가 수행**하고 LLM은 자연어→JSON 변환만 담당한다.
+- 응답 파싱은 3단계 폴백(json 표시 코드블록 → 임의 코드블록 → `{`~`}` 구간 추출)
+- query 결과는 `items`(+`_row_number`·`start_gap_days`·`end_gap_days`)와 `summary`(건수·공수합·평균진행률)를 반환하고, 프론트는 항목 id를 `aiFilterIds`에 담아 그리드를 필터링한다. `insight` 필드가 오면 분석 코멘트로 표시
+- 라우트는 `pl` 이상 게이팅 + viewer의 변경성 액션 403 이중 방어. 변경 액션은 SSE로 전파
+
+**분석 대상 축소(입력 토큰 억제)** — `_get_items_summary()`가 전체 행을 나열하지 않고 **①완료(진행률 100) 제외 ②계획기간이 오늘~4주(`_ANALYSIS_WINDOW_DAYS=28`) 창을 벗어난 미래 항목 제외**. 단 **기한 경과 미완료(지연)는 창 밖이어도 포함**(분석의 핵심). 전체 건수·완료 수는 헤더 집계로 남겨 맥락을 유지하고, 프롬프트에 "목록은 전체가 아니다"를 명시해 LLM이 "없다"고 단정하지 않게 한다. query 필터는 `_execute_query`가 전체 데이터로 실행하므로 **조회 정확도는 불변**
+- 실측 절감: 345건(완료 139) 프로젝트 35.6K자→14.2K자(**61%**). 단 **지연 항목이 많으면 절감폭이 작다**(173건·완료 18건 프로젝트는 10%) — 지연은 제외 대상이 아니기 때문
+
+**generate 액션**(마일스톤 기반 태스크 일괄 생성) — 프로젝트 `description`의 마일스톤을 근거로 여러 건 생성. 기존 Task가 있으면 `구분`/`Task`/`서브태스크`를 **그대로 복사**하고 새 `세부항목`만 작성한다. 담당자 `AI생성`·공수 `2`·진행률 `0`은 **서버 고정**(LLM 값 무시). 일정은 마일스톤 시기("8월 3주")를 LLM이 날짜로 환산하고, 시기 언급이 없으면 서버가 오늘 기준 영업일로 채운다(`_next_business_day`/`_add_business_days`로 토·일 배제). 한 번에 최대 30건
+- **LLM 오류 방어 2중**: ①프롬프트에 기존 Task 재사용 few-shot 예시 + "category에 마일스톤명 금지" 명시 ②서버가 `task_name`/`detail` 빈 항목과 (구분·Task·서브태스크·세부항목) 완전 중복 항목을 스킵(`skipped` 카운트로 반환). 실제로 LOCAL 모델이 category 자리에 마일스톤명을 넣고 task_name을 비우는 실수를 반복해 추가한 장치
+
+**move 액션** — TID(행번호) 기준 순서 이동(`source_row`/`target_row`/`position`). 전역 flat 리스트에서 빼고 대상 위/아래에 삽입한 뒤 `sort_order`를 0..N-1로 재할당하고 WBS 코드를 재계산한다. parent_id는 불변
+
+**동시성 제약** — LOCAL(CLI subprocess)만 순차 처리(120초×N 대기 가능). GEMINI/DAOU_GATEWAY/CLAUDE(HTTP)는 해당 없음. `app.run(threaded=True)`로 단기 완화
+
+**비(非)LLM 부속** — `analyze_schedule_gaps()`는 같은 모듈에 있지만 LLM을 쓰지 않는 순수 계산 함수로, `GET /api/wbs/<pid>/schedule-gaps`가 계획 대비 실제 일정 갭(지연/조기/정시)을 집계할 때 쓴다
 
 ### 태스크 갱신 알림 자동 메일 (APScheduler)
 - **목적**: 프로젝트별 지정 시각에 담당자에게 이번주 할당 태스크를 메일로 보내 일정·진행률 갱신 유도
@@ -295,20 +339,43 @@ wbs/
 
 ## 7. 실행 방법
 
+### 로컬 개발
+
 ```bash
 .venv\Scripts\activate            # (최초) pip install -r requirements.txt
-python run.py                     # http://localhost:5000
+python run.py                     # http://localhost:5000  (debug=True, 자동 리로드)
 ```
-- 서버 실행 시 `instance/wbs.db` 자동 생성 + 마이그레이션 자동 적용
+- 서버 실행 시 `instance/wbs.db` 자동 생성 + 미적용 마이그레이션 자동 적용 + 초기 관리자 시드
+- `AI_MODEL=DAOU_GATEWAY`로 쓸 때는 **CA 번들을 먼저 만들어야 한다** (없으면 AI 호출이 `Connection error.`로 실패)
+  ```bash
+  python scripts/make_ca_bundle.py     # -> certs/ca-bundle.pem
+  # .env: SSL_CERT_FILE=certs/ca-bundle.pem
+  ```
+
+### Docker 배포 (Coolify)
+
+```bash
+docker compose up -d --build         # waitress-serve, 5000 포트, wbs-data 볼륨에 DB 영속
+```
+- 컨테이너 TZ는 `Asia/Seoul` 고정 (스케줄러 발송시각·이력 시각 일관)
+- `FLASK_ENV`/`HOST`/`PORT`/`DATABASE_PATH`는 compose가 덮어쓰고, 나머지는 `.env` → 없으면 `app/config.py` 기본값
+- 메일 링크용 `APP_BASE_URL`은 compose에 운영 도메인으로 지정
+
+### 테스트
+
+```bash
+python -m pytest -q                  # 128건
+```
 
 ## 8. 변경 이력 (Changelog)
 
 > 각 항목의 현재 동작 상세는 §6, 스키마는 §4 참조. 아래는 "언제 무엇을 했는가" 요약.
 
+- **2026-08-26** — **사내 AI Gateway 프로바이더 추가**: `AI_MODEL=DAOU_GATEWAY` 신설. OpenAI 호환이라 `_call_openai_compatible()`을 파라미터화(base_url 기본값·모델·max_tokens·temperature·extra_body)해 재사용. 게이트웨이 필수 규칙인 기능 태그 1개(`metadata.tags=["WBS_AI_ASSISTANT"]`)를 `extra_body`로 전달(SDK가 표준 외 필드를 버리므로 필수), max_tokens 16000. 실호출로 규칙 검증(태그 누락 시 400 / 게이트웨이 경유 시 claude 모델도 temperature 수용). 사내 루트 CA로 TLS 인터셉션되어 `certs/daou-root.pem` + `scripts/make_ca_bundle.py` 추가(`SSL_CERT_FILE`). 테스트 125→128건. 겸사겸사 **문서 전반 정리** — handoff: 누락돼 있던 `backup_service`/`api_admin`(백업·복원 API)·`certs`/`scripts`·Docker 파일 반영, 마이그레이션 017 추가, Docker 배포·테스트 실행법 보강, AI 섹션 프로바이더 표로 재구성. **API 권한 오기 5건 정정**(프로젝트 수정·삭제·이력플래그·WBS 초기화·메일발송을 admin/developer로 적어뒀으나 실제는 pm). README: 2026-04-13 상태(권한 3단계, AI·SSE·이력 없음, "tests 미구현")에서 현재 기준으로 전면 갱신하고 스키마·API 전량은 handoff 참조로 위임
 - **2026-08-25** — **기동 시 태스크 알림 중복 발송 수정**: 하루 1회 판정을 메모리(`_sent_today`)에서 DB(`project.task_notify_last_date`, 마이그레이션 017)로 이전 — 재기동해도 그날 발송 이력이 유지된다. 발송시각을 120분(`_CATCHUP_MINUTES`) 넘긴 뒤늦은 발송은 생략하고 처리 완료로 기록. 스케줄러 상태 응답 `sent_today` → `done_today`(+`catchup_minutes`). 테스트 121→125건
 - **2026-08-25** — **그리드 셀 선택·편집을 엑셀 방식으로 전환**: 상시 `contenteditable` 제거 → 클릭=선택, 더블클릭·F2·Enter·문자 입력=편집. 사각형 범위 선택(드래그/Shift/방향키/Ctrl+A), `Delete`로 선택 범위 값 삭제, `Ctrl+C`로 TSV 복사(엑셀 붙여넣기 호환·인용 처리), 붙여넣기는 선택 위치 기준 + TSV 인용 파서 적용. 행 선택(TID 열)은 종전 동작 유지하며 셀 선택과 배타
 - **2026-08-07** — **AI 분석 범위 축소 + 태스크 생성 기능**: ①분석용 요약을 미완료 + (지연 or 향후 4주) 항목으로 제한해 입력 토큰 절감(345건 프로젝트 61%). ②**generate 액션** 신설 — 프로젝트 마일스톤 기준 태스크 일괄 생성(담당자 `AI생성`/공수 2 서버 고정, 마일스톤 시기→영업일 일정 환산, 기존 구분·Task 체계 재사용, 중복·빈 항목 서버 스킵). 프론트 그리드 자동 갱신 + 생성 건수 안내, AI 바 placeholder 문구 갱신. 테스트 112→121건
-- **2026-08-07** — **AI 프로바이더 정리(GEMINI + Claude API)**: Anthropic Messages API 프로바이더 추가(`AI_MODEL=CLAUDE`, `anthropic` SDK, 기본 모델 `claude-opus-5`, `effort=medium`, refusal 처리). 사내 GEMMA(llama.cpp) 경로 및 전용 대응 코드 삭제 — 압축 요약(`_get_compact_summary`)·축약 프롬프트(`_build_compact_system_prompt`)·`id_slot` 전달 제거로 프롬프트 경로 단일화. Claude CLI(LOCAL)는 유지. 테스트 110→112건
+- **2026-08-07** — **AI 프로바이더 정리(GEMINI + Claude API)**: Anthropic Messages API 프로바이더 추가(`AI_MODEL=CLAUDE`, `anthropic` SDK, 기본 모델 `claude-opus-5`, `effort=medium`, refusal 처리). 경량 모델 전용 대응 경로 삭제 — 압축 요약(`_get_compact_summary`)·축약 프롬프트(`_build_compact_system_prompt`)·`id_slot` 전달 제거로 프롬프트 경로 단일화. Claude CLI(LOCAL)는 유지. 테스트 110→112건
 - **2026-08-06** — **그리드 상단바 메뉴 정리**: CSV/Excel 내보내기·Excel 붙여넣기·샘플 다운로드를 '데이터관리' 드롭다운으로 묶고, 유저명·로그아웃을 구분선 오른쪽 그룹으로 분리, 가이드를 제목 옆 원형 `?` 버튼으로 이동(상단 버튼 10개→6개). 이모지 아이콘 → 인라인 SVG 라인 아이콘 교체(아이콘 중복 제거 + 다크 배경 가독성). 워크쓰루 1단계 설명 갱신
 - **2026-07-24** — 붙여넣기용 **샘플 Excel 다운로드**(`GET /api/io/sample/excel`, 헤더 + 예시 2행 생성). 브랜딩 문구 `for Claude (via MCP)` → `via AI Agent`(전 템플릿 title·로고 크레딧), 랜딩 날짜 자동변환 설명 문구 수정
 - **2026-07-16** — **전역 역할 2단계 정리**: `user.role`을 관리자/일반(admin/developer)으로 축소(016 마이그레이션, 전역 viewer→developer 통일). 업무 권한은 프로젝트별로 일원화 — 유저 관리 화면은 관리자/일반만, PM/PL/개발자/뷰어는 프로젝트 수정 화면에서 지정. 랜딩 권한 체계 소개도 5개 카드로 갱신
@@ -337,8 +404,9 @@ python run.py                     # http://localhost:5000
 - [ ] 대시보드 페이지 차트 (통계 모달 차트는 구현됨)
 - [ ] Excel Import UI (파일 업로드 폼)
 - [ ] 에러 핸들링 고도화 (전역 에러 핸들러)
-- [ ] 프로덕션 배포 설정 (waitress/gunicorn). **주의**: SSE 브로커·스케줄러가 단일 프로세스 전제 → 멀티 워커 시 Redis Pub/Sub·외부 스케줄러 필요
+- [ ] 멀티 프로세스 확장 — 현재 Docker(waitress 단일 프로세스 8스레드)로 배포 중. **SSE 브로커·스케줄러가 단일 프로세스 전제**라 워커를 늘리려면 Redis Pub/Sub·외부 스케줄러가 선행돼야 함
 - [ ] AI 어시스턴트 동시성 (LOCAL/CLI 한정 잔여 이슈. `threaded=True` 단기 개선 적용. 중기: Celery/RQ 작업 큐)
+- [ ] 사내 AI Gateway 앱 서버 방화벽 결재 (`dev-llmgw.daouax.com` TCP 443) — 완료 전까지 서버 배포본은 `AI_MODEL=LOCAL` 유지
 - [ ] 변경 이력 archival/rotation 정책 (현재 무제한 누적)
 - [ ] 유저 삭제 (현재 비활성화로 대체)
 - [ ] 셀 편집 presence를 세부항목/진행상태 팝업·진행률 입력까지 확장

@@ -2,9 +2,10 @@
 
 > **Work Breakdown Structure** — 프로젝트의 계층적 작업 분해 구조를 웹에서 생성·관리하는 도구
 
-[![Python](https://img.shields.io/badge/Python-3.x-blue?logo=python)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-3.1.1-black?logo=flask)](https://flask.palletsprojects.com/)
 [![SQLite](https://img.shields.io/badge/SQLite-내장-blue?logo=sqlite)](https://www.sqlite.org/)
+[![Tests](https://img.shields.io/badge/tests-128%20passed-brightgreen)]()
 [![License](https://img.shields.io/badge/License-Private-red)]()
 
 ---
@@ -15,12 +16,15 @@
 2. [주요 기능](#2-주요-기능)
 3. [기술 스택](#3-기술-스택)
 4. [프로젝트 구조](#4-프로젝트-구조)
-5. [데이터베이스 스키마](#5-데이터베이스-스키마)
+5. [데이터베이스](#5-데이터베이스)
 6. [API 엔드포인트](#6-api-엔드포인트)
 7. [권한 체계](#7-권한-체계)
 8. [빠른 시작](#8-빠른-시작)
 9. [환경 설정](#9-환경-설정)
 10. [향후 작업](#10-향후-작업)
+
+> 설계 결정의 배경·상세 스펙은 **[handoff.md](./handoff.md)** 를 참조하세요. 본 문서는 개요이며,
+> 스키마 전체 컬럼·엔드포인트 전량·변경 이력은 handoff에서 단일 관리합니다.
 
 ---
 
@@ -30,71 +34,94 @@
 |------|------|
 | 프로젝트명 | WBS(Work Breakdown Structure) 관리 시스템 |
 | 목적 | 프로젝트의 계층적 작업 분해 구조를 웹에서 생성·관리 |
-| 저장소 | https://github.com/YoonSoonMoo/wbs |
-| 최종 갱신 | 2026-04-10 |
+| 저장소 | origin: https://github.com/YoonSoonMoo/wbs · gitea(미러): https://gitea.daou.co.kr/yoonsm/wbs |
+| 기간 | 2026-04-10 최초 구축 ~ 2026-08-26 최신 |
 
-본 시스템은 프로젝트 관리 담당자가 작업(Task)을 계층적으로 정의하고,
-일정·담당자·진행률을 한 화면에서 직관적으로 관리할 수 있도록 설계된
-**경량 웹 애플리케이션**입니다. 별도의 빌드 도구 없이 Flask 서버만으로
-즉시 실행 가능하며, 엑셀·CSV Import/Export와 Gantt 차트 뷰를 함께 제공합니다.
+프로젝트 관리 담당자가 작업(Task)을 계층적으로 정의하고 일정·담당자·진행률을 한 화면에서
+관리할 수 있도록 만든 **경량 웹 애플리케이션**입니다. 별도 빌드 도구 없이 Flask 서버만으로
+즉시 실행되며, 엑셀 감각의 그리드 편집을 중심으로 Gantt 차트·통계·AI 어시스턴트·실시간 협업을
+함께 제공합니다.
 
 ---
 
 ## 2. 주요 기능
 
-### 📋 WBS 그리드
+### 📋 WBS 그리드 — 엑셀 방식 편집
 
-- **계층적 트리 구조** — 무제한 depth의 parent-child 관계 지원
-- **WBS 코드 자동생성** — 항목 추가·이동·삭제 시 `1.0 / 1.1 / 1.1.1` 형식으로 자동 재계산
-- **contenteditable 인라인 편집** — 셀 클릭 즉시 편집, 300 ms debounce 자동 저장
-- **컨텍스트 메뉴** — 우클릭으로 행 삽입(위/아래) · 행 복제 · 행 삭제
-- **검색 / 필터** — 전체 컬럼 키워드 검색, 진행률 상태別 필터, 담당자 드롭다운
-- **컬럼 정렬** — 헤더 클릭으로 오름차순 / 내림차순 토글
-- **진행률 색상 바** — 0 % 회색 → 30 % 노랑 → 70 % 파랑 → 100 % 초록
-- **지연 업무 알림** — 계획완료일 초과 + 진행률 미만 항목을 칩(Chip)으로 상시 표시
+- **계층 구조** — 구분 > Task > 서브태스크 > 세부항목. WBS 코드(`1.0 / 1.1 / 1.1.1`)는 추가·이동·삭제 시 자동 재계산
+- **셀 선택 = 클릭, 편집 = 더블클릭·F2·Enter·문자 입력** — 드래그·Shift·방향키로 사각형 범위, `Ctrl+A` 전체
+- **`Ctrl+C` TSV 복사 / `Ctrl+V` 붙여넣기 / `Delete` 범위 삭제** — 엑셀과 그대로 오간다
+- **자동 저장** — 편집 종료 시 300ms debounce로 PATCH. 날짜는 다양한 입력 형식을 `yyyy-MM-dd`로 정규화
+- **행 조작** — TID 열 클릭 복수 선택, 드래그앤드롭·우클릭 메뉴(삽입/복제/삭제/행이동)
+- **필터·정렬** — 빠른검색 2입력 AND, 완료 포함·나만의·이번주·지연 필터, 컬럼별 정렬 (상태는 프로젝트별 localStorage 유지)
 
-### 📊 대시보드
+### 🤖 AI 어시스턴트
 
-- 프로젝트 목록 카드 (전체 / 완료 / 진행 / 지연 건수, 평균 진행률)
-- 카테고리별·담당자별 통계
-- 프로젝트 생성 · 수정 · 삭제 (admin 전용)
-- 프로젝트 멤버 할당 UI (참여자 / 뷰어 역할 선택)
+- 자연어 한 줄로 **조회 · 추가 · 수정 · 삭제 · 순서 이동 · 마일스톤 기반 태스크 일괄 생성**
+- 조회 결과는 그리드에 즉시 필터로 적용되고, 지연·리스크에 대한 **분석 코멘트(insight)** 를 함께 제시
+- 프로바이더 4종을 `.env` 한 줄로 전환: `GEMINI` · `DAOU_GATEWAY`(사내 게이트웨이) · `CLAUDE` · `LOCAL`(Claude CLI)
+- **LLM은 자연어→JSON 변환만** 담당하고 DB 조작은 전부 서버 코드가 수행 (담당자·공수·진행률 등은 서버 고정값)
+
+### 🔄 실시간 협업 (SSE)
+
+- 다른 사용자의 변경이 **새로고침 없이** 그리드에 반영 (본인 변경은 무시)
+- **편집 중 셀 표시** — 편집자별 색상 외곽선 + 이름 배지
+- 내가 편집 중이면 즉시 덮어쓰지 않고 "지금 갱신" 배너로 알린 뒤 편집 종료 시 반영
+
+### 📊 대시보드 · 통계
+
+- 프로젝트 카드 (전체/완료/진행/지연 건수, 공수 가중 평균 진행률)
+- 카테고리별·담당자별 통계, 주간 진척 추이 (Chart.js 도넛·라인)
+- 계획 대비 실제 일정 갭 분석 (지연/조기/정시)
 
 ### 📅 Gantt 차트
 
-- [Frappe Gantt](https://frappe.io/gantt) 기반 시각화
-- 주간 / 월간 / 분기 뷰 전환
-- WBS 항목의 계획 일정(plan_start ~ plan_end) 자동 반영
+- [Frappe Gantt](https://frappe.io/gantt) 기반 (로컬 번들, 한국어 로케일 패치)
+- 담당자별 색상, 완료 항목 토글, 오늘 세로선, 담당자 필터
 
-### 📥 Import / Export
+### 📧 알림 · 메일
 
-| 형식 | Import | Export |
-|------|--------|--------|
-| CSV | ✅ (파일 업로드 / 붙여넣기) | ✅ (UTF-8 BOM) |
-| Excel (.xlsx) | ✅ (탭 구분 붙여넣기) | ✅ (헤더 서식 포함) |
+- **태스크 갱신 알림 자동 메일** — 프로젝트별 지정 시각에 담당자에게 이번주 할당 태스크를 발송 (APScheduler, 평일 1회)
+- **지연 태스크 메일** — 담당자별 지연 목록 수동 발송
+- 오늘의 알림 칩 — 지연·임박 태스크를 그리드 상단에 상시 표시
+
+### 📥 Import / Export · 운영
+
+| 항목 | 내용 |
+|------|------|
+| Export | CSV(UTF-8 BOM) · Excel(.xlsx, 서식 포함) |
+| Import | CSV 업로드 · 탭 구분 텍스트 붙여넣기 · 샘플 `.xlsx` 다운로드 |
+| 변경 이력 | 추적 필드 6종 기록 (프로젝트별 ON/OFF) |
+| 백업/복원 | DB 스냅샷 다운로드·업로드 복원 (구버전 백업은 마이그레이션 자동 적용) |
+| 공지사항 | 그리드 상단 marquee |
 
 ### 🔐 인증 / 권한
 
-- 로그인 · 회원가입 · 로그아웃
-- 세션 기반 인증 (Flask session + werkzeug 비밀번호 해싱)
-- 역할 기반 접근 제어 (admin / participant / viewer)
+- 세션 기반 인증 (Flask session + werkzeug 해싱), 비활성 계정 차단, 임시 비밀번호 강제 변경
+- **5단계 권한** admin > PM > PL > developer > viewer — 상세는 [§7](#7-권한-체계)
+- **API 토큰** — `Authorization: Bearer <token>`으로 외부 클라이언트(Claude CLI 스킬 등)가 세션 없이 호출
 
 ---
 
 ## 3. 기술 스택
 
-| 구분 | 기술 | 버전 |
-|------|------|------|
-| Language | Python | 3.x |
-| Framework | Flask | 3.1.1 |
-| Database | SQLite (내장 `sqlite3`) | — |
-| Frontend | Jinja2 + Vanilla JS | — |
-| Font | Noto Sans KR + JetBrains Mono | Google Fonts CDN |
-| Excel | openpyxl | 3.1.5 |
-| Gantt | Frappe Gantt | 0.6.1 (CDN) |
-| 환경변수 | python-dotenv | 1.1.0 |
-| WSGI | waitress | 3.0.2 (Windows 프로덕션) |
-| Test | pytest | 8.3.5 |
+| 구분 | 기술 | 버전 | 비고 |
+|------|------|------|------|
+| Language | Python | 3.11 | 3.10+ |
+| Framework | Flask | 3.1.1 | 앱 팩토리 패턴 |
+| Database | SQLite | 내장 | `sqlite3` 직접 사용 (ORM 없음), WAL 모드 |
+| Frontend | Jinja2 + Vanilla JS | — | 서버 렌더링 + AJAX 하이브리드 |
+| Excel | openpyxl | 3.1.5 | Import / Export |
+| LLM SDK | openai / anthropic | 1.59.6 / 0.120.2 | openai=GEMINI·DAOU_GATEWAY, anthropic=CLAUDE |
+| Gantt | Frappe Gantt | 0.6.1 | 로컬 번들 (ko 로케일 패치) |
+| Chart | Chart.js | 4.4.1 | CDN, 통계 모달 |
+| Font | Noto Sans KR + JetBrains Mono | — | Google Fonts CDN |
+| 스케줄러 | APScheduler | 3.10.4 | 태스크 갱신 알림 |
+| HTTP | requests | 2.34.2 | 메일 발송(NCP API) |
+| 환경변수 | python-dotenv | 1.1.0 | |
+| WSGI | waitress | 3.0.2 | 로컬 Windows · Docker 공통 |
+| 배포 | Docker + Coolify | — | `Dockerfile` + `docker-compose.yaml` |
+| Test | pytest | 8.3.5 | 128건 |
 
 > **SPA 프레임워크 미사용** — 빌드 도구 없이 즉시 개발·실행 가능
 
@@ -105,60 +132,38 @@
 ```
 wbs/
 ├── app/
-│   ├── __init__.py              # Flask 앱 팩토리 (create_app)
+│   ├── __init__.py              # Flask 앱 팩토리 (admin 시드, 스케줄러 기동)
 │   ├── auth.py                  # 인증 데코레이터
 │   ├── config.py                # 환경설정 (Dev / Prod / Test)
 │   ├── extensions.py            # DB 헬퍼 (get_db, close_db, init_db)
-│   │
-│   ├── models/                  # 순수 DB CRUD 쿼리
-│   │   ├── project.py           # 프로젝트 CRUD
-│   │   └── wbs_item.py          # WBS 항목 CRUD (재귀 CTE 트리 조회)
-│   │
+│   ├── scheduler.py             # APScheduler (태스크 갱신 알림 1분 폴링)
+│   ├── models/                  # 순수 DB CRUD (project, wbs_item, change_history)
 │   ├── services/                # 비즈니스 로직
-│   │   ├── wbs_service.py       # WBS 핵심 로직 (트리 구축·이동·일괄수정)
-│   │   ├── wbs_code_service.py  # WBS 코드 자동생성·재계산
-│   │   ├── auth_service.py      # 인증 서비스 (register · login · 역할 조회)
-│   │   ├── dashboard_service.py # 대시보드 통계
-│   │   └── import_export.py     # CSV / Excel Import · Export
-│   │
-│   ├── routes/                  # URL 라우팅 (Blueprint)
-│   │   ├── __init__.py          # 블루프린트 등록
-│   │   ├── auth.py              # /login · /register · /logout
-│   │   ├── main.py              # / · /project/<id>/wbs · /gantt
-│   │   ├── api_project.py       # /api/projects
-│   │   ├── api_wbs.py           # /api/wbs
-│   │   └── api_import_export.py # /api/io
-│   │
-│   ├── static/
-│   │   ├── css/
-│   │   │   ├── style.css        # 대시보드 스타일
-│   │   │   └── wbs.css          # WBS 그리드 전용 스타일
-│   │   ├── js/
-│   │   │   ├── app.js           # API 헬퍼·토스트 알림·공통 유틸
-│   │   │   ├── grid.js          # WBS 그리드 UI
-│   │   │   ├── gantt.js         # Frappe Gantt 래퍼
-│   │   │   └── dashboard.js     # 대시보드 UI
-│   │   └── lib/                 # 벤더 라이브러리
-│   │
-│   └── templates/
-│       ├── base.html            # 공통 레이아웃
-│       ├── login.html           # 로그인
-│       ├── register.html        # 회원가입
-│       ├── index.html           # 대시보드 (프로젝트 목록)
-│       ├── wbs.html             # WBS 그리드 뷰 (독립 페이지)
-│       └── gantt.html           # Gantt 차트 뷰
-│
-├── migrations/
-│   ├── 001_initial.sql          # 초기 DB 스키마
-│   └── 002_auth.sql             # 인증 스키마
-│
-├── instance/                    # SQLite DB 파일 (자동 생성, .gitignore)
-├── template/
-│   └── wbs-manage.html          # UI 레퍼런스 원본 (단독 HTML)
-├── tests/                       # 테스트 (미구현)
-├── requirements.txt
+│   │   ├── wbs_service.py           # 트리 구축·이동·일괄수정
+│   │   ├── wbs_code_service.py      # WBS 코드 자동생성·재계산
+│   │   ├── auth_service.py          # 인증·역할·API 토큰
+│   │   ├── dashboard_service.py     # 통계
+│   │   ├── ai_assistant.py          # AI 어시스턴트 (멀티 프로바이더 LLM)
+│   │   ├── event_broker.py          # SSE 인메모리 Pub/Sub
+│   │   ├── notification_service.py  # 태스크 갱신 알림
+│   │   ├── mail_service.py          # 메일 발송 + HTML 빌더
+│   │   ├── backup_service.py        # DB 백업·복원
+│   │   └── import_export.py         # CSV / Excel
+│   ├── routes/                  # Blueprint (auth, main, api_project, api_wbs,
+│   │                            #            api_users, api_admin, api_import_export)
+│   ├── static/                  # css / js (grid, gantt, dashboard, walkthrough) / img
+│   └── templates/               # landing, login, register, index, wbs, gantt
+├── migrations/                  # NNN_*.sql 버전드 마이그레이션 (001~017)
+├── certs/                       # 사내 루트 CA (AI 게이트웨이 TLS용)
+├── scripts/make_ca_bundle.py    # certifi + 사내 CA 결합 번들 생성
+├── skills/wbs-report/           # Claude CLI 연동 스킬
+├── template/                    # UI·스크립트 레퍼런스 원본 (실사용 안 함)
+├── tests/                       # pytest 스위트 (128건)
+├── instance/                    # SQLite DB (자동 생성, gitignore)
+├── Dockerfile / docker-compose.yaml
 ├── run.py                       # 실행 진입점
-└── handoff.md                   # 개발 인수인계 문서
+├── handoff.md                   # 개발 인수인계 상세 문서
+└── CLAUDE.md                    # Claude Code 작업 지침
 ```
 
 ### 핵심 설계 원칙
@@ -166,172 +171,83 @@ wbs/
 | 결정 | 이유 |
 |------|------|
 | **Adjacency List** 계층 구조 | 삽입·이동이 잦은 WBS 특성상 Nested Set보다 단순 |
-| **재귀 CTE** 트리 조회 | 단일 쿼리로 전체 트리 반환, N+1 쿼리 방지 |
+| **재귀 CTE** 트리 조회 | 단일 쿼리로 전체 트리 반환, N+1 방지 |
 | **ORM 미사용** | sqlite3 내장 모듈로 종속성 최소화, 쿼리 가시성 확보 |
 | **WAL 모드** | 동시 읽기 성능 향상 |
-| **인라인 편집 + debounce** | 별도 저장 버튼 없이 UX 단순화 |
+| **버전드 마이그레이션** | `schema_version` 추적 → 매 기동 시 미적용분만 자동 실행 |
+| **LLM은 파서로만** | 자연어→JSON 변환만 맡기고 DB 조작·고정값은 서버가 결정 |
 | **앱 팩토리 패턴** | 환경별 설정·테스트 격리 용이 |
 
 ---
 
-## 5. 데이터베이스 스키마
+## 5. 데이터베이스
 
-### project
+SQLite 단일 파일(`instance/wbs.db`). 서버 기동 시 `migrations/`의 미적용 SQL이 순서대로 자동 적용됩니다.
 
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| id | INTEGER PK | 자동 증가 |
-| name | TEXT NOT NULL | 프로젝트명 |
-| description | TEXT | 설명 |
-| start_date | TEXT | 시작일 (YYYY-MM-DD) |
-| end_date | TEXT | 종료일 |
-| created_at | TEXT | 생성일시 (트리거 자동) |
-| updated_at | TEXT | 수정일시 (트리거 자동) |
+| 테이블 | 역할 |
+|--------|------|
+| `project` | 프로젝트 (개요/마일스톤, 공지, 이력 ON/OFF, 알림 발송시각) |
+| `wbs_item` | **WBS 항목** — `parent_id` Adjacency List + `wbs_code`·`sort_order` |
+| `user` | 계정 (전역 역할 admin/developer, 활성 여부, API 토큰 해시) |
+| `project_member` | 프로젝트별 역할 매핑 — **권한 판정의 실제 출처** |
+| `wbs_change_history` | 변경 이력 (추적 필드 6종, 항목 삭제 후에도 보존) |
+| `schema_version` | 마이그레이션 적용 이력 |
 
-### wbs_item
+- 트리거: `progress` 100 도달/이탈 시 `completed_at` 자동 설정·해제
+- 인덱스: `idx_wbs_project` · `idx_wbs_parent` · `idx_wbs_code` · `idx_wbs_assignee` · `idx_wbs_sort`
 
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| id | INTEGER PK | 자동 증가 |
-| project_id | INTEGER FK | 소속 프로젝트 |
-| parent_id | INTEGER FK | 부모 항목 (`NULL` = 최상위) |
-| wbs_code | TEXT | 자동생성 코드 (`1.0`, `1.1`, `1.1.1`) |
-| level | INTEGER | 깊이 (0 = 최상위) |
-| sort_order | INTEGER | 형제 노드 내 정렬 순서 |
-| category | TEXT | 구분 (기획·설계·개발 등) |
-| task_name | TEXT | Task 명 |
-| subtask | TEXT | 서브태스크 |
-| detail | TEXT | 세부항목 |
-| description | TEXT | 상세 설명 |
-| plan_start | TEXT | 계획 시작일 |
-| plan_end | TEXT | 계획 완료일 |
-| actual_start | TEXT | 실제 시작일 |
-| actual_end | TEXT | 실제 종료일 |
-| assignee | TEXT | 담당자 |
-| effort | REAL | 공수 (man-day) |
-| progress | INTEGER | 진행률 (0 ~ 100) |
-| status | TEXT | 진행상태 (`대기` / `진행중` / `완료` / `보류` / `지연`) |
-| priority | TEXT | 우선순위 (`low` / `medium` / `high` / `critical`) |
-| is_milestone | INTEGER | 마일스톤 여부 (0 / 1) |
-
-### user
-
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| id | INTEGER PK | 자동 증가 |
-| name | TEXT NOT NULL | 이름 |
-| email | TEXT UNIQUE | 이메일 (로그인 ID) |
-| password_hash | TEXT NOT NULL | 비밀번호 해시 (werkzeug) |
-| role | TEXT | 전역 역할 (`admin` / `participant` / `viewer`) |
-| created_at | TEXT | 생성일시 |
-
-### project_member
-
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| project_id | INTEGER FK | 프로젝트 |
-| user_id | INTEGER FK | 사용자 |
-| role | TEXT | 프로젝트 내 역할 (`participant` / `viewer`) |
-
-> **복합 PK**: `(project_id, user_id)`  
-> **admin** 역할 사용자는 `project_member` 미등록 시에도 모든 프로젝트에 접근 가능
-
-#### 인덱스
-
-```sql
-idx_wbs_project  -- project_id
-idx_wbs_parent   -- parent_id
-idx_wbs_code     -- (project_id, wbs_code)
-idx_wbs_assignee -- assignee
-idx_wbs_sort     -- (parent_id, sort_order)
-```
+> 컬럼 단위 전체 정의는 [handoff.md §4](./handoff.md) 참조
 
 ---
 
 ## 6. API 엔드포인트
 
-### 인증 (페이지 라우트)
+| 그룹 | 프리픽스 | 주요 기능 |
+|------|---------|----------|
+| 페이지 | `/` | 랜딩·대시보드·WBS 그리드·Gantt |
+| 인증 | `/login` `/register` `/logout` | 세션 로그인 |
+| 프로젝트 | `/api/projects` | 목록·CRUD·멤버 관리·이력 플래그 |
+| WBS | `/api/wbs` | 항목 CRUD·이동·일괄수정·통계·지연·AI·이력 |
+| 실시간 | `/api/wbs/<pid>/events` `/editing` | SSE 변경 스트림 · 편집 presence |
+| 유저 | `/api/users` | 목록·권한·활성 토글·비밀번호 리셋·API 토큰 |
+| 시스템 | `/api/admin` | DB 백업 · 복원 (admin) |
+| Import/Export | `/api/io` | CSV·Excel 내보내기 / 가져오기 / 샘플 |
 
-| Method | URL | 설명 |
-|--------|-----|------|
-| GET/POST | `/login` | 로그인 |
-| GET/POST | `/register` | 회원가입 |
-| GET | `/logout` | 로그아웃 → `/login` 리다이렉트 |
+**인증** — 세션 쿠키 또는 `Authorization: Bearer <API 토큰>` 둘 다 허용
 
-### 프로젝트 API (`/api/projects`)
-
-| Method | URL | 권한 | 설명 |
-|--------|-----|------|------|
-| GET | `/api/projects` | 로그인 | 프로젝트 목록 |
-| POST | `/api/projects` | admin | 프로젝트 생성 |
-| GET | `/api/projects/<id>` | 로그인 | 프로젝트 상세 |
-| PUT | `/api/projects/<id>` | admin | 프로젝트 수정 |
-| DELETE | `/api/projects/<id>` | admin | 프로젝트 삭제 |
-| GET | `/api/projects/<id>/members` | 로그인 | 멤버 목록 |
-| GET | `/api/projects/users` | admin | 전체 사용자 목록 |
-
-### WBS API (`/api/wbs`)
-
-| Method | URL | 권한 | 설명 |
-|--------|-----|------|------|
-| GET | `/api/wbs/<pid>/items` | viewer+ | 항목 목록 (`?mode=flat\|tree`) |
-| POST | `/api/wbs/<pid>/items` | participant+ | 항목 추가 |
-| GET | `/api/wbs/items/<id>` | viewer+ | 항목 상세 |
-| PUT | `/api/wbs/items/<id>` | participant+ | 항목 전체 수정 |
-| PATCH | `/api/wbs/items/<id>` | participant+ | 항목 부분 수정 (인라인 편집) |
-| DELETE | `/api/wbs/items/<id>` | participant+ | 항목 삭제 (자식 포함 재귀) |
-| POST | `/api/wbs/items/<id>/move` | participant+ | 항목 이동 |
-| POST | `/api/wbs/<pid>/items/batch` | participant+ | 일괄 수정 |
-| GET | `/api/wbs/<pid>/stats` | viewer+ | 진행 통계 |
-| GET | `/api/wbs/<pid>/delayed` | viewer+ | 지연 업무 목록 |
-| GET | `/api/wbs/<pid>/dashboard` | viewer+ | 대시보드 종합 데이터 |
-
-### Import/Export API (`/api/io`)
-
-| Method | URL | 설명 |
-|--------|-----|------|
-| GET | `/api/io/<pid>/export/csv` | CSV 다운로드 (UTF-8 BOM) |
-| GET | `/api/io/<pid>/export/excel` | Excel 다운로드 (.xlsx) |
-| POST | `/api/io/<pid>/import/csv` | CSV 업로드 (multipart/form-data) |
-| POST | `/api/io/<pid>/import/paste` | 탭 구분 텍스트 붙여넣기 |
+> 메서드·URL·권한 단위 전체 목록은 [handoff.md §5](./handoff.md) 참조
 
 ---
 
 ## 7. 권한 체계
 
 ```
-admin
- ├── 모든 프로젝트 생성·수정·삭제
- ├── 사용자 관리 (멤버 할당)
- └── 모든 프로젝트 WBS 읽기·쓰기
-
-participant  (프로젝트별 할당)
- ├── 할당된 프로젝트 WBS 읽기·쓰기
- └── Import / Export
-
-viewer  (프로젝트별 할당)
- └── 할당된 프로젝트 읽기 전용
-     (편집 버튼 숨김, contenteditable 비활성화, API 403)
+admin        전역 전권 — 유저 관리 · 백업/복원 · 새 프로젝트 생성
+ └ PM        프로젝트 전권 — 수정·삭제·초기화·이력·메일·AI·멤버 관리
+    └ PL     개발자 권한 + AI 어시스턴트 + 계획일자 수정
+       └ developer   WBS 편집 (계획시작/완료일은 수정 불가)
+          └ viewer   읽기 전용 (Gantt 접근 차단, 쓰기 API 403)
 ```
 
-### 인증 데코레이터
+- **PM/PL/developer/viewer는 프로젝트별 역할**(`project_member.role`)이며 판정의 실제 출처입니다
+- **전역 역할(`user.role`)은 관리자/일반 2단계**로, 시스템 관리자 여부만 구분합니다
+- 멤버 추가·삭제 및 역할 지정은 **프로젝트 수정 화면에서 admin/PM**이 수행합니다
 
 | 데코레이터 | 용도 |
 |-----------|------|
 | `@login_required` | 페이지 라우트 인증 |
-| `@api_login_required` | API 라우트 인증 (401 JSON 반환) |
+| `@api_login_required` | API 인증 (401 JSON) — 세션 또는 Bearer 토큰 |
 | `@project_access_required(min_role)` | 프로젝트별 최소 권한 검사 |
-| `@admin_required` | 전역 admin 권한 검사 |
+| `@admin_required` | 전역 admin 검사 |
 
 ### 기본 관리자 계정
 
-서버 최초 실행 시 자동 생성됩니다.
+서버 최초 실행 시 자동 생성됩니다 (`ADMIN_*` 환경변수로 변경 가능).
 
 | 항목 | 값 |
 |------|-----|
 | 이메일 | `yoonsm@daou.co.kr` |
 | 비밀번호 | `zaq12wsx` |
-| 이름 | 윤순무 |
 | 역할 | admin |
 
 > ⚠️ **운영 환경에서는 반드시 비밀번호를 변경하세요.**
@@ -340,57 +256,57 @@ viewer  (프로젝트별 할당)
 
 ## 8. 빠른 시작
 
-### 사전 요구사항
-
-- Python 3.10 이상
-- pip
-
-### 설치 및 실행
+### 로컬 개발
 
 ```bash
-# 1. 저장소 클론
 git clone https://github.com/YoonSoonMoo/wbs.git
 cd wbs
 
-# 2. 가상환경 생성 및 활성화
 python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # Linux / macOS
 
-# Windows
-.venv\Scripts\activate
-
-# Linux / macOS
-source .venv/bin/activate
-
-# 3. 의존성 설치
 pip install -r requirements.txt
-
-# 4. 서버 실행
-python run.py
-
-# 5. 브라우저 접속
-# http://localhost:5000
+python run.py                   # http://localhost:5000
 ```
 
-> 서버 최초 실행 시 `instance/wbs.db` 파일이 자동 생성되고  
-> `migrations/` 폴더의 SQL 파일이 순서대로 자동 적용됩니다.
+> 최초 실행 시 `instance/wbs.db`가 생성되고 `migrations/`가 순서대로 적용된 뒤 관리자 계정이 시드됩니다.
 
-### 프로덕션 실행 (Windows, waitress)
+### 사내 AI Gateway를 쓰는 경우
+
+사내망은 자체 루트 CA로 TLS를 가로채므로, **CA 번들을 먼저 만들어야** AI 호출이 성공합니다.
+(없으면 `Connection error.`로 실패합니다.)
 
 ```bash
-waitress-serve --host=0.0.0.0 --port=5000 run:app
+python scripts/make_ca_bundle.py    # -> certs/ca-bundle.pem
 ```
 
-### 테스트 실행
+```dotenv
+AI_MODEL=DAOU_GATEWAY
+AI_API_KEY=sk-...
+SSL_CERT_FILE=certs/ca-bundle.pem
+```
+
+### Docker 배포
 
 ```bash
-pytest tests/
+docker compose up -d --build        # waitress-serve, 5000 포트, wbs-data 볼륨에 DB 영속
+```
+
+컨테이너 TZ는 `Asia/Seoul` 고정입니다. `FLASK_ENV`/`HOST`/`PORT`/`DATABASE_PATH`는 compose가
+덮어쓰고 나머지는 `.env` → 없으면 코드 기본값을 씁니다.
+
+### 테스트
+
+```bash
+python -m pytest -q                 # 128건
 ```
 
 ---
 
 ## 9. 환경 설정
 
-`FLASK_ENV` 환경변수로 실행 환경을 선택합니다.
+`FLASK_ENV`로 실행 환경을 선택합니다.
 
 | 값 | 설정 클래스 | DB |
 |----|-----------|-----|
@@ -398,17 +314,23 @@ pytest tests/
 | `production` | `ProductionConfig` | `instance/wbs.db` |
 | `testing` | `TestingConfig` | `:memory:` |
 
-### 환경변수
+### 환경변수 (`.env`)
 
-프로젝트 루트에 `.env` 파일을 생성하여 설정합니다.
-
-```dotenv
-# Flask 시크릿 키 (운영 시 반드시 변경)
-SECRET_KEY=your-secure-secret-key
-
-# 실행 환경 (development / production / testing)
-FLASK_ENV=production
-```
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `SECRET_KEY` | dev 키 | Flask 세션 서명 — **운영 시 반드시 변경** |
+| `FLASK_ENV` | `development` | 실행 환경 |
+| `HOST` / `PORT` | `0.0.0.0` / `5000` | 바인딩 주소 |
+| `DATABASE_PATH` | `instance/wbs.db` | SQLite 파일 경로 |
+| `ADMIN_NAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` | — | 초기 관리자 시드 값 |
+| `AI_MODEL` | `LOCAL` | `GEMINI` \| `DAOU_GATEWAY` \| `CLAUDE` \| `LOCAL` |
+| `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL_NAME` | — | 프로바이더별 인증·엔드포인트·모델 |
+| `SSL_CERT_FILE` | — | 사내 CA 결합 번들 (DAOU_GATEWAY 사용 시 필수) |
+| `APP_BASE_URL` | (없음) | 메일 내 링크의 서비스 기본 URL. 미설정 시 수동 발송은 요청 호스트, 스케줄러는 `http://localhost:5000` |
+| `APP_TZ` | `Asia/Seoul` | 스케줄러 발송시각 판단 기준 시간대 |
+| `ENABLE_SCHEDULER` | `1` | `1` 이외의 값이면 알림 스케줄러 미기동 (테스트·reloader 부모 프로세스도 자동 제외) |
+| `VERSION` | — | 그리드 상단바에 표시할 버전 문자열 |
+| `NAVER_API_ACCESS_KEY` / `NAVER_API_SECRET_KEY` | — | 메일 발송(NCP Cloud Outbound Mailer) 인증 |
 
 ---
 
@@ -416,25 +338,19 @@ FLASK_ENV=production
 
 | 항목 | 우선순위 |
 |------|---------|
-| 테스트 코드 작성 (`tests/`) | 높음 |
-| 에러 핸들링 고도화 (전역 에러 핸들러) | 높음 |
-| 비밀번호 변경 기능 | 중간 |
-| 관리자 사용자 관리 UI | 중간 |
-| 드래그 앤 드롭 행 이동 | 중간 |
-| Chart.js 대시보드 차트 (도넛·막대) | 낮음 |
-| Excel Import UI (파일 업로드 폼) | 낮음 |
-| 변경 이력 추적 | 낮음 |
+| 멀티 프로세스 확장 (SSE 브로커·스케줄러가 단일 프로세스 전제 → Redis Pub/Sub·외부 스케줄러 선행) | 높음 |
+| 사내 AI Gateway 앱 서버 방화벽 결재 | 높음 |
+| 에러 핸들링 고도화 (전역 에러 핸들러) | 중간 |
+| Excel Import UI (파일 업로드 폼) | 중간 |
+| AI 어시스턴트 동시성 (LOCAL/CLI 한정, 중기 Celery/RQ 작업 큐) | 중간 |
+| 변경 이력 archival / rotation 정책 | 낮음 |
+| 대시보드 페이지 차트 (통계 모달은 구현됨) | 낮음 |
 | 인쇄 / PDF 보고서 출력 | 낮음 |
 
 ---
 
 ## 관련 문서
 
-- [handoff.md](./handoff.md) — 개발 인수인계 상세 문서 (설계 결정 배경 포함)
-- [migrations/001_initial.sql](./migrations/001_initial.sql) — 초기 DB 스키마
-- [migrations/002_auth.sql](./migrations/002_auth.sql) — 인증 스키마
-- [template/wbs-manage.html](./template/wbs-manage.html) — UI 레퍼런스 원본
-
----
-
-*본 문서는 2026-04-13 기준으로 작성되었습니다.*
+- [handoff.md](./handoff.md) — 개발 인수인계 상세 문서 (스키마·API 전량, 설계 결정 배경, 변경 이력)
+- [CLAUDE.md](./CLAUDE.md) — Claude Code 작업 지침
+- [migrations/](./migrations/) — 버전드 DB 스키마 (001~017)
