@@ -821,6 +821,9 @@ document.addEventListener('paste', function(e) {
         pasteIntoGrid(t, er, eci < 0 ? 0 : eci);
         return;
     }
+    // 세부항목/진행상태 팝업 textarea·진행률 입력·검색창 등 다른 입력 요소에 붙여넣는 중이면
+    // 그리드가 가로채지 않는다 (keydown 핸들러의 isTypingTarget 가드와 동일한 이유)
+    if (isTypingTarget(e.target)) return;
     var s = selRect();
     if (!s) return;
     e.preventDefault();
