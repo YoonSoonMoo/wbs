@@ -27,6 +27,15 @@ _GEMINI_DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/ope
 # CLAUDE(AI_MODEL=CLAUDE)에서 AI_MODEL_NAME 미설정 시 사용할 기본 모델
 _CLAUDE_DEFAULT_MODEL = "claude-opus-5"
 
+# 사내 AI Gateway(AI_MODEL=DAOU_GATEWAY) — OpenAI 호환. AI_BASE_URL 미설정 시 기본 엔드포인트
+_DAOU_GATEWAY_DEFAULT_BASE_URL = "https://dev-llmgw.daouax.com/v1"
+_DAOU_GATEWAY_DEFAULT_MODEL = "claude-sonnet-5"
+# 게이트웨이 필수 규칙: 모든 호출에 기능 태그를 정확히 1개 실어야 한다 (없으면 400).
+# 기능별 사용량·비용 집계 키이므로 이 앱의 LLM 호출은 전부 이 태그 하나로 나간다.
+_DAOU_GATEWAY_TAG = "WBS_AI_ASSISTANT"
+# Claude 계열은 thinking 이 max_tokens 를 함께 소비하므로 여유를 크게 둔다(생성분만 과금).
+_DAOU_GATEWAY_MAX_TOKENS = 16000
+
 # 분석 대상 기간(일). 프롬프트에 실을 태스크를 오늘~4주로 제한해 입력 토큰을 억제한다.
 _ANALYSIS_WINDOW_DAYS = 28
 
@@ -39,36 +48,45 @@ _GENERATE_MAX_ITEMS = 30
 def _call_llm(system_prompt: str, user_prompt: str) -> str:
     """AI_MODEL 설정에 따라 LLM을 호출한다.
 
-    GEMINI → OpenAI 호환 엔드포인트, CLAUDE → Anthropic Messages API,
-    LOCAL → claude -p CLI.
+    GEMINI → OpenAI 호환 엔드포인트, DAOU_GATEWAY → 사내 AI Gateway(OpenAI 호환),
+    CLAUDE → Anthropic Messages API, LOCAL → claude -p CLI.
     """
     provider = current_app.config.get("AI_MODEL", "LOCAL")
     if provider == "GEMINI":
         return _call_openai_compatible(system_prompt, user_prompt)
+    if provider == "DAOU_GATEWAY":
+        return _call_daou_gateway(system_prompt, user_prompt)
     if provider == "CLAUDE":
         return _call_anthropic(system_prompt, user_prompt)
     return _call_claude_cli(system_prompt, user_prompt)
 
 
-def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
-    """OpenAI 호환 엔드포인트(Gemini)를 호출한다."""
+def _call_openai_compatible(system_prompt: str, user_prompt: str, *,
+                            default_base_url: str = _GEMINI_DEFAULT_BASE_URL,
+                            model: str = "",
+                            # 추론(thinking) 모델은 "생각" 토큰까지 소비하므로 답(JSON)을 낼 여유가 필요하다.
+                            max_tokens: int = 2048,
+                            extra_body: "dict | None" = None) -> str:
+    """OpenAI 호환 엔드포인트(Gemini · 사내 AI Gateway)를 호출한다."""
     from openai import OpenAI
 
     cfg = current_app.config
-    base_url = cfg.get("AI_BASE_URL") or _GEMINI_DEFAULT_BASE_URL
-    # 추론(thinking) 모델은 "생각" 토큰까지 소비하므로 답(JSON)을 낼 여유가 필요하다.
-    max_tokens = 2048
+    base_url = cfg.get("AI_BASE_URL") or default_base_url
+    params = {
+        "model": model or cfg["AI_MODEL_NAME"],
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0,
+        "max_tokens": max_tokens,
+    }
+    if extra_body:
+        # OpenAI SDK는 표준 외 필드를 조용히 버리므로 extra_body로만 서버까지 전달된다.
+        params["extra_body"] = extra_body
     try:
         client = OpenAI(base_url=base_url, api_key=cfg["AI_API_KEY"])
-        resp = client.chat.completions.create(
-            model=cfg["AI_MODEL_NAME"],
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0,
-            max_tokens=max_tokens,
-        )
+        resp = client.chat.completions.create(**params)
         choice = resp.choices[0]
         output = (choice.message.content or "").strip()
         if not output:
@@ -83,6 +101,22 @@ def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
         return output
     except Exception as e:
         raise RuntimeError(f"LLM 호출 오류({cfg.get('AI_MODEL')}): {e}")
+
+
+def _call_daou_gateway(system_prompt: str, user_prompt: str) -> str:
+    """사내 AI Gateway를 호출한다 (AI_MODEL=DAOU_GATEWAY).
+
+    OpenAI 호환 규격이라 SDK는 그대로 쓰고 base_url·키만 게이트웨이 것으로 바꾼다.
+    게이트웨이 고유 규칙: 기능 태그를 정확히 1개 실어야 한다 (누락·2개 이상은 400).
+    """
+    return _call_openai_compatible(
+        system_prompt,
+        user_prompt,
+        default_base_url=_DAOU_GATEWAY_DEFAULT_BASE_URL,
+        model=current_app.config.get("AI_MODEL_NAME") or _DAOU_GATEWAY_DEFAULT_MODEL,
+        max_tokens=_DAOU_GATEWAY_MAX_TOKENS,
+        extra_body={"metadata": {"tags": [_DAOU_GATEWAY_TAG]}},
+    )
 
 
 def _call_anthropic(system_prompt: str, user_prompt: str) -> str:

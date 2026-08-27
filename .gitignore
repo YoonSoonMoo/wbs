@@ -22,3 +22,6 @@ skills/wbs-report/env.json
 
 # Claude Code 작업용 임시 worktree
 .claude/worktrees/
+
+# scripts/make_ca_bundle.py 생성물(certifi+사내CA 결합) — daou-root.pem 만 추적
+certs/ca-bundle.pem

@@ -241,21 +241,108 @@ def test_process_command_generate_creates_items(app, admin_client, monkeypatch):
 
 
 def test_call_llm_dispatches_by_ai_model(app, monkeypatch):
-    """AI_MODEL 설정에 따라 OpenAI 호환/Anthropic/CLI 경로로 라우팅되는지 검증."""
+    """AI_MODEL 설정에 따라 OpenAI 호환/게이트웨이/Anthropic/CLI 경로로 라우팅되는지 검증."""
     calls = []
     monkeypatch.setattr(ai_assistant, '_call_openai_compatible',
                         lambda s, u: calls.append('openai') or 'openai')
+    monkeypatch.setattr(ai_assistant, '_call_daou_gateway',
+                        lambda s, u: calls.append('gateway') or 'gateway')
     monkeypatch.setattr(ai_assistant, '_call_anthropic',
                         lambda s, u: calls.append('anthropic') or 'anthropic')
     monkeypatch.setattr(ai_assistant, '_call_claude_cli',
                         lambda s, u: calls.append('cli') or 'cli')
 
-    for model, expected in (('GEMINI', 'openai'), ('CLAUDE', 'anthropic'), ('LOCAL', 'cli')):
+    for model, expected in (('GEMINI', 'openai'), ('DAOU_GATEWAY', 'gateway'),
+                            ('CLAUDE', 'anthropic'), ('LOCAL', 'cli')):
         calls.clear()
         with app.app_context():
             app.config['AI_MODEL'] = model
             assert ai_assistant._call_llm('sys', 'user') == expected
         assert calls == [expected]
+
+
+def _fake_openai(monkeypatch, captured, content='{"action": "query"}'):
+    """openai.OpenAI 를 가짜 클라이언트로 교체한다 (요청 인자 캡처용)."""
+    class _Resp:
+        choices = [type('C', (), {'message': type('M', (), {'content': content})()})()]
+        usage = None
+
+    class _Completions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return _Resp()
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            captured['base_url'] = kwargs.get('base_url')
+            captured['api_key'] = kwargs.get('api_key')
+            self.chat = type('Chat', (), {'completions': _Completions()})()
+
+    monkeypatch.setattr('openai.OpenAI', _FakeClient)
+
+
+def test_call_daou_gateway_sends_required_tag(app, monkeypatch):
+    """게이트웨이 경로: 기본 엔드포인트·기본 모델, 기능 태그 1개를 extra_body로 전달."""
+    captured = {}
+    _fake_openai(monkeypatch, captured)
+
+    with app.app_context():
+        app.config['AI_MODEL'] = 'DAOU_GATEWAY'
+        app.config['AI_API_KEY'] = 'sk-gw'
+        app.config['AI_BASE_URL'] = ''
+        app.config['AI_MODEL_NAME'] = ''
+        out = ai_assistant._call_daou_gateway('sys', 'user')
+
+    assert out == '{"action": "query"}'
+    assert captured['base_url'] == 'https://dev-llmgw.daouax.com/v1'
+    assert captured['api_key'] == 'sk-gw'
+    assert captured['model'] == 'claude-sonnet-5'   # AI_MODEL_NAME 미설정 시 기본값
+    # 게이트웨이 경유 시엔 Claude 계열도 temperature 를 수용한다 (실서버 확인)
+    assert captured['temperature'] == 0
+    # 태그는 정확히 1개 — 누락·빈 리스트·2개 이상은 게이트웨이가 400으로 거절한다
+    assert captured['extra_body'] == {'metadata': {'tags': ['WBS_AI_ASSISTANT']}}
+    assert len(captured['extra_body']['metadata']['tags']) == 1
+    assert captured['messages'] == [
+        {'role': 'system', 'content': 'sys'},
+        {'role': 'user', 'content': 'user'},
+    ]
+
+
+def test_call_daou_gateway_honors_base_url_and_model(app, monkeypatch):
+    """AI_BASE_URL/AI_MODEL_NAME 설정 시 기본값 대신 그 값을 쓰고, temperature=0 은 유지."""
+    captured = {}
+    _fake_openai(monkeypatch, captured)
+
+    with app.app_context():
+        app.config['AI_MODEL'] = 'DAOU_GATEWAY'
+        app.config['AI_API_KEY'] = 'sk-gw'
+        app.config['AI_BASE_URL'] = 'https://custom-gw.example.com/v1'
+        app.config['AI_MODEL_NAME'] = 'gpt-4o-mini'
+        ai_assistant._call_daou_gateway('sys', 'user')
+
+    assert captured['base_url'] == 'https://custom-gw.example.com/v1'
+    assert captured['model'] == 'gpt-4o-mini'
+    assert captured['temperature'] == 0
+    assert captured['max_tokens'] == 16000
+
+
+def test_call_openai_compatible_keeps_gemini_defaults(app, monkeypatch):
+    """GEMINI 경로는 기존 그대로 — 태그 없이 temperature=0 / max_tokens=2048."""
+    captured = {}
+    _fake_openai(monkeypatch, captured)
+
+    with app.app_context():
+        app.config['AI_MODEL'] = 'GEMINI'
+        app.config['AI_API_KEY'] = 'sk-gemini'
+        app.config['AI_BASE_URL'] = ''
+        app.config['AI_MODEL_NAME'] = 'gemini-2.5-flash'
+        ai_assistant._call_openai_compatible('sys', 'user')
+
+    assert captured['base_url'] == 'https://generativelanguage.googleapis.com/v1beta/openai/'
+    assert captured['model'] == 'gemini-2.5-flash'
+    assert captured['temperature'] == 0
+    assert captured['max_tokens'] == 2048
+    assert 'extra_body' not in captured
 
 
 class _FakeTextBlock:
